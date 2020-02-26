@@ -59,13 +59,6 @@ server_WebServer_f2eb7a3ff7 [
 	fontcolor = black;
 	label = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>Web Server</b></td></tr></table>>;
 ]
-	actor_User_579e9aae81 -> server_WebServer_f2eb7a3ff7 [
-		color = black;
-		fontcolor = black;
-		dir = forward;
-
-		label = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>User enters<br/>comments (*)</b></td></tr></table>>;
-	]
 	server_WebServer_f2eb7a3ff7 -> datastore_SQLDatabase_d2006ce1bb [
 		color = black;
 		fontcolor = black;
@@ -86,5 +79,12 @@ server_WebServer_f2eb7a3ff7 [
 		dir = forward;
 
 		label = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>Show comments<br/>(*)</b></td></tr></table>>;
+	]
+	actor_User_579e9aae81 -> server_WebServer_f2eb7a3ff7 [
+		color = black;
+		fontcolor = black;
+		dir = forward;
+
+		label = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>User enters<br/>comments (*)</b></td></tr></table>>;
 	]
 }

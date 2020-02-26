@@ -36,7 +36,7 @@ class TestAttributes(unittest.TestCase):
 
     def test_load_threats(self):
         tm = TM("TM")
-        self.assertNotEqual(len(TM._BagOfThreats), 0)
+        self.assertNotEqual(len(tm._threats), 0)
         with self.assertRaises(FileNotFoundError):
             tm.threatsFile = "threats.json"
 
@@ -44,8 +44,6 @@ class TestAttributes(unittest.TestCase):
             TM("TM", threatsFile="threats.json")
 
     def test_responses(self):
-        tm = TM("my test tm", description="aa", isOrdered=True)
-
         user = Actor("User")
         web = Server("Web Server")
         db = Datastore("SQL Database")
@@ -57,6 +55,8 @@ class TestAttributes(unittest.TestCase):
         http_resp = Dataflow(web, user, "http resp")
         http_resp.responseTo = http_req
 
+        tm = TM("my test tm", description="aa", isOrdered=True)
+        tm.elements = [http_req, insert, query, query_resp, http_resp]
         self.assertTrue(tm.check())
 
         self.assertEqual(http_req.response, http_resp)
@@ -94,8 +94,10 @@ class TestAttributes(unittest.TestCase):
         resp_post = Dataflow(server, user, "HTTP Response", isResponse=True)
 
         worker_query = Dataflow(worker, db, "Query", data="SQL")
-        Dataflow(db, worker, "Results", isResponse=True)
+        worker_resp = Dataflow(db, worker, "Results", isResponse=True)
 
+        tm = TM("TM")
+        tm.elements = [req_get, server_query, result, resp_get, req_post, resp_post, worker_query, worker_resp]
         self.assertTrue(tm.check())
 
         self.assertEqual(req_get.srcPort, -1)
@@ -149,8 +151,6 @@ class TestAttributes(unittest.TestCase):
 class TestMethod(unittest.TestCase):
 
     def test_defaults(self):
-        tm = TM("my test tm", description="aa", isOrdered=True)
-
         internet = Boundary("Internet")
         cloud = Boundary("Cloud")
 
@@ -188,6 +188,8 @@ class TestMethod(unittest.TestCase):
             },
         ]
 
+        tm = TM("my test tm", description="aa", isOrdered=True)
+        tm.elements = [request, response, user_query, server_query, func_query]
         self.assertTrue(tm.check())
 
         for case in testCases:
