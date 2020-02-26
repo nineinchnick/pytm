@@ -82,10 +82,6 @@ The following is a sample `tm.py` file that describes a simple application where
 
 from pytm.pytm import TM, Server, Datastore, Dataflow, Boundary, Actor, Lambda
 
-tm = TM("my test tm")
-tm.description = "another test tm"
-tm.isOrdered = True
-
 User_Web = Boundary("User/Web")
 Web_DB = Boundary("Web/DB")
 
@@ -129,6 +125,10 @@ db_to_web = Dataflow(db, web, "Comments contents")
 db_to_web.protocol = "MySQL"
 db_to_web.data = 'Results of insert op'
 
+tm = TM("my test tm")
+tm.description = "another test tm"
+tm.isOrdered = True
+tm.elements = [my_lambda_to_db, user_to_web, web_to_user, web_to_db, db_to_web]
 tm.process()
 
 ```

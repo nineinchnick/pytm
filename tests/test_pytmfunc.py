@@ -9,11 +9,21 @@ from contextlib import contextmanager
 from os.path import dirname
 from io import StringIO
 
-from pytm import (TM, Actor, Boundary, Dataflow, Datastore, ExternalEntity,
-                  Lambda, Process, Server, Threat)
+from pytm import (
+    Actor,
+    Boundary,
+    Dataflow,
+    Datastore,
+    ExternalEntity,
+    Lambda,
+    Process,
+    Server,
+    Threat,
+    TM,
+)
 
 
-with open(os.path.abspath(os.path.join(dirname(__file__), '..')) + "/pytm/threatlib/threats.json", "r") as threat_file:
+with open(os.path.join(dirname(__file__), "..", "pytm", "threatlib", "threats.json"), "r") as threat_file:
     threats_json = json.load(threat_file)
 
 
@@ -36,19 +46,20 @@ class TestTM(unittest.TestCase):
         with open(os.path.join(dir_path, 'seq.plantuml')) as x:
             expected = x.read().strip()
 
-        TM.reset()
-        tm = TM("my test tm", description="aaa")
         internet = Boundary("Internet")
         server_db = Boundary("Server/DB")
         user = Actor("User", inBoundary=internet)
         web = Server("Web Server")
         db = Datastore("SQL Database", inBoundary=server_db)
 
-        Dataflow(user, web, "User enters comments (*)", note="bbb")
-        Dataflow(web, db, "Insert query with comments", note="ccc")
-        Dataflow(db, web, "Retrieve comments")
-        Dataflow(web, user, "Show comments (*)")
+        flows = [
+            Dataflow(user, web, "User enters comments (*)", note="bbb"),
+            Dataflow(web, db, "Insert query with comments", note="ccc"),
+            Dataflow(db, web, "Retrieve comments"),
+            Dataflow(web, user, "Show comments (*)"),
+        ]
 
+        tm = TM("my test tm", description="aaa", elements=flows, isOrdered=True)
         with captured_output() as (out, err):
             tm.seq()
 
@@ -63,19 +74,20 @@ class TestTM(unittest.TestCase):
 
         random.seed(0)
 
-        TM.reset()
-        tm = TM("my test tm", description="aaa")
         internet = Boundary("Internet")
         server_db = Boundary("Server/DB")
         user = Actor("User", inBoundary=internet)
         web = Server("Web Server")
         db = Datastore("SQL Database", inBoundary=server_db)
 
-        Dataflow(user, web, "User enters comments (*)")
-        Dataflow(web, db, "Insert query with comments")
-        Dataflow(db, web, "Retrieve comments")
-        Dataflow(web, user, "Show comments (*)")
+        flows = [
+            Dataflow(user, web, "User enters comments (*)"),
+            Dataflow(web, db, "Insert query with comments"),
+            Dataflow(db, web, "Retrieve comments"),
+            Dataflow(web, user, "Show comments (*)"),
+        ]
 
+        tm = TM("my test tm", description="aaa", elements=flows)
         with captured_output() as (out, err):
             tm.dfd()
 
@@ -83,8 +95,145 @@ class TestTM(unittest.TestCase):
         self.maxDiff = None
         self.assertEqual(output, expected)
 
+    def test_lazy_init(self):
+        internet = Boundary("Internet")
+        server_db = Boundary("Server/DB")
+        vpc = Boundary("AWS VPC")
 
-class Testpytm(unittest.TestCase):
+        user = Actor("User")
+        user.protocol = "HTTP"
+        user.inBoundary = internet
+
+        web = Server("Web Server")
+        web.OS = "Ubuntu"
+        web.protocol = "HTTP"
+        web.dstPort = 80
+        web.isHardened = True
+        web.sanitizesInput = False
+        web.encodesOutput = True
+        web.authorizesSource = False
+
+        db = Datastore("SQL Database")
+        db.OS = "CentOS"
+        db.protocol = "MySQL"
+        db.dstPort = 3306
+        db.isHardened = False
+        db.inBoundary = server_db
+        db.isSQL = True
+        db.inScope = True
+
+        my_lambda = Lambda("AWS Lambda")
+        my_lambda.hasAccessControl = True
+        my_lambda.inBoundary = vpc
+
+        user_to_web = Dataflow(user, web, "User enters comments (*)")
+        user_to_web.data = 'Comments in HTML or Markdown'
+        user_to_web.note = "This is a simple web app."
+
+        web_to_db = Dataflow(web, db, "Insert query with comments")
+        web_to_db.data = 'MySQL insert statement, all literals'
+        web_to_db.note = "Web server inserts user comments."
+
+        db_to_web = Dataflow(db, web, "Retrieve comments")
+        db_to_web.protocol = "MySQL"
+        db_to_web.data = 'Web server retrieves comments from DB'
+
+        web_to_user = Dataflow(web, user, "Show comments (*)")
+        web_to_user.data = 'Web server shows comments to the end user'
+
+        my_lambda_to_db = Dataflow(my_lambda, db, "Lambda periodically cleans DB")
+        my_lambda_to_db.data = "Lamda clears DB every 6 hours"
+
+        tm = TM("my test tm")
+        tm.description = "desc"
+        tm.isOrdered = True
+        tm.elements = [user_to_web, web_to_db, db_to_web, web_to_user, my_lambda_to_db]
+
+        assets = [user, web, db, my_lambda]
+        dataflows = [user_to_web, web_to_db, db_to_web, web_to_user, my_lambda_to_db]
+        boundaries = [vpc, internet, server_db]
+        self.assertTrue(tm.check())
+        self.maxDiff = None
+        self.assertListEqual(tm._elements, assets + boundaries + dataflows)
+        self.assertListEqual(tm._boundaries, [internet, server_db, vpc])
+        self.assertListEqual(tm._flows, dataflows)
+
+    def test_eager_init(self):
+        user = Actor("User", protocol="HTTP")
+        web = Server(
+            "Web Server",
+            OS="Ubuntu",
+            protocol="HTTP",
+            dstPort=80,
+            isHardened=True,
+            sanitizesInput=False,
+            encodesOutput=True,
+            authorizesSource=False,
+        )
+        db = Datastore(
+            "SQL Database",
+            OS="CentOS",
+            protocol="MySQL",
+            dstPort=3306,
+            isHardened=False,
+            isSQL=True,
+        )
+        my_lambda = Lambda("AWS Lambda", hasAccessControl=True)
+
+        elements = [
+            Boundary("AWS VPC", elements=[my_lambda]),
+            Boundary("Internet", elements=[user]),
+            Boundary("Server/DB", elements=[web, db]),
+            Dataflow(
+                user,
+                web,
+                "User enters comments (*)",
+                data="Comments in HTML or Markdown",
+                note="This is a simple web app.",
+            ),
+            Dataflow(
+                web,
+                db,
+                "Insert query with comments",
+                data="MySQL insert statement, all literals",
+                note="Web server inserts user comments.",
+            ),
+            Dataflow(
+                db,
+                web,
+                "Retrieve comments",
+                protocol="MySQL",
+                data="Web server retrieves comments from DB",
+            ),
+            Dataflow(
+                web,
+                user,
+                "Show comments (*)",
+                data="Web server shows comments to the end user",
+            ),
+            Dataflow(
+                my_lambda,
+                db,
+                "Lambda periodically cleans DB",
+                data="Lamda clears DB every 6 hours",
+            ),
+        ]
+
+        tm = TM(
+            "my test tm",
+            description="desc",
+            isOrdered=True,
+            elements=elements,
+        )
+
+        assets = [user, web, db, my_lambda]
+        self.assertTrue(tm.check())
+        self.assertListEqual(tm._elements, assets + elements)
+        self.assertEqual(len(tm._boundaries), 3)
+        self.assertEqual(len(tm._flows), 5)
+
+
+class TestThreats(unittest.TestCase):
     # Test for all the threats in threats.py - test Threat.apply() function
 
     def test_INP01(self):
@@ -93,8 +242,8 @@ class Testpytm(unittest.TestCase):
         lambda1.usesEnvironmentVariables = True
         lambda1.sanitizesInput = False
         lambda1.checksInputBounds = False
-        process1.usesEnvironmentVariables = True 
-        process1.sanitizesInput = False 
+        process1.usesEnvironmentVariables = True
+        process1.sanitizesInput = False
         process1.checksInputBounds = False
         ThreatObj = Threat(next(item for item in threats_json if item["SID"] == "INP01"))
         self.assertTrue(ThreatObj.apply(lambda1))
@@ -204,11 +353,11 @@ class Testpytm(unittest.TestCase):
 
     def test_DE01(self):
         user = Actor("User")
-        web = Server("Web Server")  
+        web = Server("Web Server")
         user_to_web = Dataflow(user, web, "User enters comments (*)")
         user_to_web.protocol = 'HTTP'
         user_to_web.isEncrypted = False
-        ThreatObj = Threat(next(item for item in threats_json if item["SID"] == "DE01")) 
+        ThreatObj = Threat(next(item for item in threats_json if item["SID"] == "DE01"))
         self.assertTrue(ThreatObj.apply(user_to_web))
 
     def test_DE02(self):
@@ -331,19 +480,19 @@ class Testpytm(unittest.TestCase):
         self.assertTrue(ThreatObj.apply(web))
 
     def test_INP09(self):
-        web = Server("Web Server") 
+        web = Server("Web Server")
         web.validatesInput = False
         ThreatObj = Threat(next(item for item in threats_json if item["SID"] == "INP09"))
         self.assertTrue(ThreatObj.apply(web))
 
     def test_INP10(self):
-        web = Server("Web Server") 
+        web = Server("Web Server")
         web.validatesInput = False
         ThreatObj = Threat(next(item for item in threats_json if item["SID"] == "INP10"))
         self.assertTrue(ThreatObj.apply(web))
 
     def test_INP11(self):
-        web = Server("Web Server") 
+        web = Server("Web Server")
         web.validatesInput = False
         web.sanitizesInput = False
         ThreatObj = Threat(next(item for item in threats_json if item["SID"] == "INP11"))
@@ -362,18 +511,18 @@ class Testpytm(unittest.TestCase):
 
     def test_AC04(self):
         user = Actor("User")
-        web = Server("Web Server")  
+        web = Server("Web Server")
         user_to_web = Dataflow(user, web, "User enters comments (*)")
-        user_to_web.data = 'XML' 
+        user_to_web.data = 'XML'
         user_to_web.authorizesSource = False
         ThreatObj = Threat(next(item for item in threats_json if item["SID"] == "AC04"))
         self.assertTrue(ThreatObj.apply(user_to_web))
 
     def test_DO03(self):
         user = Actor("User")
-        web = Server("Web Server")  
+        web = Server("Web Server")
         user_to_web = Dataflow(user, web, "User enters comments (*)")
-        user_to_web.data = 'XML' 
+        user_to_web.data = 'XML'
         ThreatObj = Threat(next(item for item in threats_json if item["SID"] == "DO03"))
         self.assertTrue(ThreatObj.apply(user_to_web))
 
@@ -411,7 +560,7 @@ class Testpytm(unittest.TestCase):
 
     def test_DE03(self):
         user = Actor("User")
-        web = Server("Web Server")  
+        web = Server("Web Server")
         user_to_web = Dataflow(user, web, "User enters comments (*)")
         user_to_web.protocol = 'HTTP'
         user_to_web.isEncrypted = False
@@ -524,7 +673,7 @@ class Testpytm(unittest.TestCase):
 
     def test_DO04(self):
         user = Actor("User")
-        web = Server("Web Server")  
+        web = Server("Web Server")
         user_to_web = Dataflow(user, web, "User enters comments (*)")
         user_to_web.data = 'XML'
         user_to_web.handlesResources = False
@@ -608,7 +757,7 @@ class Testpytm(unittest.TestCase):
 
     def test_CR06(self):
         user = Actor("User")
-        web = Server("Web Server")  
+        web = Server("Web Server")
         user_to_web = Dataflow(user, web, "User enters comments (*)")
         user_to_web.protocol = 'HTTP'
         user_to_web.usesVPN = False
@@ -627,7 +776,7 @@ class Testpytm(unittest.TestCase):
 
     def test_CR07(self):
         user = Actor("User")
-        web = Server("Web Server")  
+        web = Server("Web Server")
         user_to_web = Dataflow(user, web, "User enters comments (*)")
         user_to_web.protocol = 'HTTP'
         user_to_web.data = 'XML'
@@ -644,7 +793,7 @@ class Testpytm(unittest.TestCase):
 
     def test_CR08(self):
         user = Actor("User")
-        web = Server("Web Server")  
+        web = Server("Web Server")
         user_to_web = Dataflow(user, web, "User enters comments (*)")
         user_to_web.protocol = 'HTTP'
         user_to_web.usesLatestTLSversion = False
@@ -794,7 +943,7 @@ class Testpytm(unittest.TestCase):
         process1.sanitizesInput = False
         ThreatObj = Threat(next(item for item in threats_json if item["SID"] == "INP30"))
         self.assertTrue(ThreatObj.apply(process1))
-        
+
     def test_INP31(self):
         process1 = Process("Process")
         process1.validatesInput = False

@@ -1,11 +1,11 @@
 import argparse
 import json
 import logging
+import os
 import random
 import uuid
 from collections import defaultdict
 from hashlib import sha224
-from os.path import dirname
 from re import match
 from sys import exit, stderr
 from textwrap import wrap
@@ -42,10 +42,10 @@ class var(object):
         # value = val
         if instance in self.data:
             raise ValueError(
-                    "cannot overwrite {} value with {}, already set to {}".format(
-                        self.__class__.__name__, value, self.data[instance]
-                    )
-                  )
+                "cannot overwrite {} value with {}, already set to {}".format(
+                    self.__class__.__name__, value, self.data[instance]
+                )
+            )
         self.data[instance] = value
         if self.onSet is not None:
             self.onSet(instance, value)
@@ -87,6 +87,23 @@ class varElement(var):
         super().__set__(instance, value)
 
 
+class varElements(var):
+    def __init__(self, default=None, onSet=None):
+        super().__init__(default, onSet=onSet)
+        if self.default is None:
+            self.default = []
+
+    def __set__(self, instance, value):
+        for i, e in enumerate(value):
+            if not isinstance(e, Element):
+                raise ValueError(
+                    "expecting a list of Elements, item number {} is a {}".format(
+                        type(value)
+                    )
+                )
+        super().__set__(instance, list(value))
+
+
 def _setColor(element):
     if element.inScope is True:
         return "black"
@@ -98,8 +115,8 @@ def _setLabel(element):
     return "<br/>".join(wrap(element.name, 14))
 
 
-def _sort(elements, addOrder=False):
-    ordered = sorted(elements, key=lambda flow: flow.order)
+def _sort(flows, addOrder=False):
+    ordered = sorted(flows, key=lambda flow: flow.order)
     if not addOrder:
         return ordered
     for i, flow in enumerate(ordered):
@@ -138,7 +155,7 @@ def _match_responses(flows):
     return flows
 
 
-def _applyDefaults(elements):
+def _apply_defaults(elements):
     for e in elements:
         e._safeset("data", e.source.data)
         if e.isResponse:
@@ -150,6 +167,32 @@ def _applyDefaults(elements):
             e._safeset("dstPort", e.sink.port)
             if hasattr(e.sink, "isEncrypted"):
                 e._safeset("isEncrypted", e.sink.isEncrypted)
+
+
+def _sort_elements(elements):
+    ''' sort elements by order in which they appear in dataflows '''
+    if not elements:
+        return elements
+    orders = {}
+    for e in elements:
+        if not hasattr(e, "order"):
+            continue
+        if e.source not in orders or orders[e.source] > e.order:
+            orders[e.source] = e.order
+    m = max(orders.values()) + 1
+    # sort in this order:
+    # assets in order in which they appear in dataflows
+    # dataflows in order
+    # other types not assigned to dataflows (boundaries), by name
+    return sorted(
+        elements,
+        key=lambda e: (
+            orders.get(e, m),
+            e.__class__.__name__,
+            getattr(e, "order", 0),
+            str(e),
+        ),
+    )
 
 
 ''' End of help functions '''
@@ -190,7 +233,18 @@ class Threat():
 
 class Finding():
     ''' This class represents a Finding - the element in question and a description of the finding '''
-    def __init__(self, element, description, details, severity, mitigations, example, id, references):
+    def __init__(
+        self,
+        element,
+        description=None,
+        details=None,
+        severity=None,
+        mitigations=None,
+        example=None,
+        id=None,
+        references=None,
+        threat=None,
+    ):
         self.target = element
         self.description = description
         self.details = details
@@ -198,41 +252,90 @@ class Finding():
         self.mitigations = mitigations
         self.example = example
         self.id = id
-        self.references = references
+        self.references = threat.references
+        if threat is not None:
+            self.description = threat.description
+            self.details = threat.details
+            self.severity = threat.severity
+            self.mitigations = threat.mitigations
+            self.example = threat.example
+            self.id = threat.id
+            self.references = threat.references
 
 
 class TM():
     ''' Describes the threat model administratively, and holds all details during a run '''
-    _BagOfFlows = []
-    _BagOfElements = []
-    _BagOfThreats = []
-    _BagOfFindings = []
-    _BagOfBoundaries = []
-    _threatsExcluded = []
     _sf = None
+    elements = varElements(onSet=lambda i, v: i._init_elements())
     description = varString("")
-    threatsFile = varString(dirname(__file__) + "/threatlib/threats.json",
-                            onSet=lambda i, v: i._init_threats())
-    isOrdered = varBool(False)
+    threatsFile = varString(
+        os.path.join(os.path.dirname(__file__), "threatlib", "threats.json"),
+        onSet=lambda i, v: i._init_threats(),
+    )
+    isOrdered = varBool(False, onSet=lambda i, v: i._init_elements())
     mergeResponses = varBool(False)
 
     def __init__(self, name, **kwargs):
+        self._threats = []
+        self._findings = []
+        self._threatsExcluded = []
+        self._sf = SuperFormatter()
         for key, value in kwargs.items():
             setattr(self, key, value)
         self.name = name
-        self._sf = SuperFormatter()
         self._add_threats()
 
-    @classmethod
-    def reset(cls):
-        cls._BagOfFlows = []
-        cls._BagOfElements = []
-        cls._BagOfThreats = []
-        cls._BagOfFindings = []
-        cls._BagOfBoundaries = []
+    def _init_elements(self):
+        self._flows = []
+        self._boundaries = []
+        self._elements = []
+        # first find all Dataflows to retain order
+        for e in self.elements:
+            if isinstance(e, Dataflow):
+                self._flows.append(e)
+            if isinstance(e, Boundary) and e not in self._boundaries:
+                self._boundaries.append(e)
+        # elements can contain Boundaries and Dataflows so create a complete set
+        # including their elements, source and sink
+        all_elements = set(self.elements)
+        for e in self.elements:
+            try:
+                all_elements |= set(e.elements)
+            except AttributeError:
+                pass
+            try:
+                all_elements.add(e.source)
+                if e.source.inBoundary is not None:
+                    all_elements.add(e.source.inBoundary)
+                all_elements.add(e.sink)
+                if e.sink.inBoundary is not None:
+                    all_elements.add(e.sink.inBoundary)
+            except AttributeError:
+                pass
+
+        _apply_defaults(self._flows)
+        self._flows = _match_responses(_sort(self._flows, self.isOrdered))
+        self._elements = _sort_elements(all_elements)
+
+        # gather elements that need to be assigned to boundaries
+        boundElements = defaultdict(list)
+        for e in self._elements:
+            try:
+                if e.inBoundary is None:
+                    continue
+            except AttributeError:
+                continue
+            if e.inBoundary not in self._boundaries:
+                self._boundaries.append(e.inBoundary)
+            if e not in e.inBoundary.elements:
+                boundElements[e.inBoundary].append(e)
+
+        for boundary, elements in boundElements.items():
+            # if boundary was initiated with any elements, this will throw an exception
+            boundary.elements = elements
 
     def _init_threats(self):
-        TM._BagOfThreats = []
+        self._threats = []
         self._add_threats()
 
     def _add_threats(self):
@@ -240,44 +343,48 @@ class TM():
             threats_json = json.load(threat_file)
 
         for i in threats_json:
-            TM._BagOfThreats.append(Threat(i))
+            self._threats.append(Threat(i))
 
     def resolve(self):
-        for e in (TM._BagOfElements):
-            if e.inScope is True:
-                for t in TM._BagOfThreats:
-                    if t.apply(e) is True:
-                        TM._BagOfFindings.append(Finding(e.name, t.description, t.details, t.severity, t.mitigations, t.example, t.id, t.references))
+        for e in self._elements:
+            if not e.inScope:
+                continue
+            for t in self._threats:
+                if not t.apply(e):
+                    continue
+                self._findings.append(Finding(e.name, threat=t))
 
     def check(self):
         if self.description is None:
-            raise ValueError("Every threat model should have at least a brief description of the system being modeled.")
-        _applyDefaults(TM._BagOfFlows)
-        for e in (TM._BagOfElements):
-            e.check()
-        TM._BagOfFlows = _match_responses(_sort(TM._BagOfFlows, self.isOrdered))
+            raise ValueError(
+                "Every threat model should have at least "
+                "a brief description of the system being modeled."
+            )
+        result = True
+        for e in self._elements:
+            if not e.check():
+                result = False
+        return result
 
     def dfd(self):
         print("digraph tm {\n\tgraph [\n\tfontname = Arial;\n\tfontsize = 14;\n\t]")
         print("\tnode [\n\tfontname = Arial;\n\tfontsize = 14;\n\trankdir = lr;\n\t]")
         print("\tedge [\n\tshape = none;\n\tfontname = Arial;\n\tfontsize = 12;\n\t]")
         print('\tlabelloc = "t";\n\tfontsize = 20;\n\tnodesep = 1;\n')
-        for b in TM._BagOfBoundaries:
+        for b in self._boundaries:
             b.dfd()
-
         if self.mergeResponses:
-            for e in TM._BagOfFlows:
+            for e in self._flows:
                 if e.response is not None:
                     e.response._is_drawn = True
-        for e in TM._BagOfElements:
-            #  Boundaries draw themselves
-            if not e._is_drawn and not isinstance(e, Boundary) and e.inBoundary is None:
+        for e in self._elements:
+            if not e._is_drawn and e.inBoundary is None:
                 e.dfd(mergeResponses=self.mergeResponses)
         print("}")
 
     def seq(self):
         print("@startuml")
-        for e in TM._BagOfElements:
+        for e in self._elements:
             if isinstance(e, Actor):
                 print("actor {0} as \"{1}\"".format(e._uniq_name(), e.name))
             elif isinstance(e, Datastore):
@@ -285,7 +392,7 @@ class TM():
             elif not isinstance(e, Dataflow) and not isinstance(e, Boundary):
                 print("entity {0} as \"{1}\"".format(e._uniq_name(), e.name))
 
-        for e in TM._BagOfFlows:
+        for e in self._flows:
             print("{0} -> {1}: {2}".format(e.source._uniq_name(), e.sink._uniq_name(), e.name))
             if e.note != "":
                 print("note left\n{}\nend note".format(e.note))
@@ -293,11 +400,20 @@ class TM():
 
     def report(self, *args, **kwargs):
         result = get_args()
-        TM._template = result.report
+        self._template = result.report
         with open(self._template) as file:
             template = file.read()
 
-        print(self._sf.format(template, tm=self, dataflows=self._BagOfFlows, threats=self._BagOfThreats, findings=self._BagOfFindings, elements=self._BagOfElements, boundaries=self._BagOfBoundaries))
+        output = self._sf.format(
+            template,
+            tm=self,
+            dataflows=self._flows,
+            threats=self._threats,
+            findings=self._findings,
+            elements=self._elements,
+            boundaries=self._boundaries,
+        )
+        print(output)
 
     def process(self):
         self.check()
@@ -313,7 +429,7 @@ class TM():
             self.resolve()
             self.report()
         if result.exclude is not None:
-            TM._threatsExcluded = result.exclude.split(",")
+            self._threatsExcluded = result.exclude.split(",")
         if result.describe is not None:
             try:
                 one_word = result.describe.split()[0]
@@ -324,7 +440,7 @@ class TM():
             print("The following properties are available for " + result.describe)
             [print("\t{}".format(i)) for i in dir(c) if not callable(i) and match("__", i) is None]
         if result.list is True:
-            [print("{} - {}".format(t.id, t.description)) for t in TM._BagOfThreats]
+            [print("{} - {}".format(t.id, t.description)) for t in self._threats]
             exit(0)
 
 
@@ -348,7 +464,6 @@ class Element():
         self.name = name
         self.uuid = uuid.UUID(int=random.getrandbits(128))
         self._is_drawn = False
-        TM._BagOfElements.append(self)
 
     def __repr__(self):
         return "<{0}.{1}({2}) at {3}>".format(
@@ -356,7 +471,7 @@ class Element():
         )
 
     def __str__(self):
-        return "{0}({1})".format(type(self).__name__, self.name)
+        return '{0}({1})'.format(type(self).__name__, self.name)
 
     def _uniq_name(self):
         ''' transform name and uuid into a unique string '''
@@ -365,11 +480,8 @@ class Element():
         return "{0}_{1}_{2}".format(type(self).__name__.lower(), name, h[:10])
 
     def check(self):
-        return True
         ''' makes sure it is good to go '''
-        # all minimum annotations are in place
-        if self.description == "" or self.name == "":
-            raise ValueError("Element {} need a description and a name.".format(self.name))
+        return True
 
     def dfd(self, **kwargs):
         self._is_drawn = True
@@ -407,7 +519,7 @@ class Lambda(Element):
     def dfd(self, **kwargs):
         self._is_drawn = True
         color = _setColor(self)
-        pngpath = dirname(__file__) + "/images/lambda.png"
+        pngpath = os.path.dirname(__file__) + "/images/lambda.png"
         label = _setLabel(self)
         print('{0} [\n\tshape = none\n\tfixedsize=shape\n\timage="{2}"\n\timagescale=true\n\tcolor = {1}'.format(self._uniq_name(), color, pngpath))
         print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{}</b></td></tr></table>>;'.format(label))
@@ -609,16 +721,9 @@ class Dataflow(Element):
         self.source = source
         self.sink = sink
         super().__init__(name, **kwargs)
-        TM._BagOfFlows.append(self)
 
     def __set__(self, instance, value):
         print("Should not have gotten here.")
-
-    def check(self):
-        ''' makes sure it is good to go '''
-        # all minimum annotations are in place
-        # then add itself to _BagOfFlows
-        pass
 
     def dfd(self, mergeResponses=False, **kwargs):
         self._is_drawn = True
@@ -644,10 +749,10 @@ class Dataflow(Element):
 
 
 class Boundary(Element):
+    elements = varElements()
+
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
-        if name not in TM._BagOfBoundaries:
-            TM._BagOfBoundaries.append(self)
 
     def dfd(self):
         if self._is_drawn:
@@ -657,11 +762,12 @@ class Boundary(Element):
         logger.debug("Now drawing boundary " + self.name)
         label = self.name
         print("subgraph cluster_{0} {{\n\tgraph [\n\t\tfontsize = 10;\n\t\tfontcolor = firebrick2;\n\t\tstyle = dashed;\n\t\tcolor = firebrick2;\n\t\tlabel = <<i>{1}</i>>;\n\t]\n".format(self._uniq_name(), label))
-        for e in TM._BagOfElements:
-            if e.inBoundary == self and not e._is_drawn:
-                # The content to draw can include Boundary objects
-                logger.debug("Now drawing content {}".format(e.name))
-                e.dfd()
+        for e in self.elements:
+            if e._is_drawn:
+                continue
+            # The content to draw can include Boundary objects
+            logger.debug("Now drawing content {}".format(e.name))
+            e.dfd()
         print("\n}\n")
 
 

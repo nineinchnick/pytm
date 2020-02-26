@@ -36,7 +36,7 @@ class TestAttributes(unittest.TestCase):
 
     def test_load_threats(self):
         tm = TM("TM")
-        self.assertNotEqual(len(TM._BagOfThreats), 0)
+        self.assertNotEqual(len(tm._threats), 0)
         with self.assertRaises(FileNotFoundError):
             tm.threatsFile = "threats.json"
 
@@ -44,8 +44,6 @@ class TestAttributes(unittest.TestCase):
             TM("TM", threatsFile="threats.json")
 
     def test_responses(self):
-        tm = TM("my test tm", description="aa", isOrdered=True)
-
         user = Actor("User")
         web = Server("Web Server")
         db = Datastore("SQL Database")
@@ -57,6 +55,8 @@ class TestAttributes(unittest.TestCase):
         http_resp = Dataflow(web, user, "http resp")
         http_resp.responseTo = http_req
 
+        tm = TM("my test tm", description="aa", isOrdered=True)
+        tm.elements = [http_req, insert, query, query_resp, http_resp]
         tm.check()
 
         self.assertEqual(http_req.response, http_resp)
@@ -70,7 +70,6 @@ class TestAttributes(unittest.TestCase):
         self.assertIs(insert.isResponse, False)
 
     def test_defaults(self):
-        tm = TM("TM")
         user = Actor("User", data="HTTP")
         server = Server(
             "Server", port=443, protocol="HTTPS", isEncrypted=True, data="JSON"
@@ -92,6 +91,8 @@ class TestAttributes(unittest.TestCase):
         req_post = Dataflow(user, server, "HTTP POST", data="JSON")
         resp_post = Dataflow(server, user, "HTTP Response", isResponse=True)
 
+        tm = TM("TM")
+        tm.elements = [req_get, query, result, resp_get, req_post, resp_post]
         tm.check()
 
         self.assertEqual(req_get.srcPort, -1)
