@@ -5,9 +5,7 @@ import json
 import os
 import random
 import unittest
-from contextlib import contextmanager
 from os.path import dirname
-from io import StringIO
 
 from pytm import (
     Actor,
@@ -25,17 +23,6 @@ from pytm import (
 
 with open(os.path.join(dirname(__file__), "..", "pytm", "threatlib", "threats.json"), "r") as threat_file:
     threats_json = json.load(threat_file)
-
-
-@contextmanager
-def captured_output():
-    new_out, new_err = StringIO(), StringIO()
-    old_out, old_err = sys.stdout, sys.stderr
-    try:
-        sys.stdout, sys.stderr = new_out, new_err
-        yield sys.stdout, sys.stderr
-    finally:
-        sys.stdout, sys.stderr = old_out, old_err
 
 
 class TestTM(unittest.TestCase):
@@ -60,10 +47,8 @@ class TestTM(unittest.TestCase):
         ]
 
         tm = TM("my test tm", description="aaa", elements=flows, isOrdered=True)
-        with captured_output() as (out, err):
-            tm.seq()
+        output = tm.seq()
 
-        output = out.getvalue().strip()
         self.maxDiff = None
         self.assertEqual(output, expected)
 
@@ -88,10 +73,8 @@ class TestTM(unittest.TestCase):
         ]
 
         tm = TM("my test tm", description="aaa", elements=flows)
-        with captured_output() as (out, err):
-            tm.dfd()
+        output = tm.dfd()
 
-        output = out.getvalue().strip()
         self.maxDiff = None
         self.assertEqual(output, expected)
 

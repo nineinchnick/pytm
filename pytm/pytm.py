@@ -8,7 +8,7 @@ from collections import defaultdict
 from hashlib import sha224
 from re import match
 from sys import exit, stderr
-from textwrap import wrap
+from textwrap import wrap, indent
 from weakref import WeakKeyDictionary
 
 from .template_engine import SuperFormatter
@@ -20,11 +20,9 @@ from .template_engine import SuperFormatter
 '''
 
 
-logger = logging.getLogger(__name__)
-
-
 class var(object):
     ''' A descriptor that allows setting a value only once '''
+
     def __init__(self, default, onSet=None):
         self.default = default
         self.data = WeakKeyDictionary()
@@ -52,6 +50,7 @@ class var(object):
 
 
 class varString(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, str):
             raise ValueError("expecting a String value, got a {}".format(type(value)))
@@ -59,6 +58,7 @@ class varString(var):
 
 
 class varBoundary(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, Boundary):
             raise ValueError("expecting a Boundary value, got a {}".format(type(value)))
@@ -66,6 +66,7 @@ class varBoundary(var):
 
 
 class varBool(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, bool):
             raise ValueError("expecting a boolean value, got a {}".format(type(value)))
@@ -73,6 +74,7 @@ class varBool(var):
 
 
 class varInt(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, int):
             raise ValueError("expecting an integer value, got a {}".format(type(value)))
@@ -80,6 +82,7 @@ class varInt(var):
 
 
 class varElement(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, Element):
             raise ValueError("expecting an Element (or inherited) "
@@ -102,17 +105,6 @@ class varElements(var):
                     )
                 )
         super().__set__(instance, list(value))
-
-
-def _setColor(element):
-    if element.inScope is True:
-        return "black"
-    else:
-        return "grey69"
-
-
-def _setLabel(element):
-    return "<br/>".join(wrap(element.name, 14))
 
 
 def _sort(flows, addOrder=False):
@@ -199,6 +191,8 @@ def _sort_elements(elements):
 
 
 class Threat():
+    ''' Represents a possible threat '''
+
     id = varString("")
     description = varString("")
     condition = varString("")
@@ -209,7 +203,6 @@ class Threat():
     references = varString("")
     target = ()
 
-    ''' Represents a possible threat '''
     def __init__(self, json_read):
         self.id = json_read['SID']
         self.description = json_read['description']
@@ -233,6 +226,7 @@ class Threat():
 
 class Finding():
     ''' This class represents a Finding - the element in question and a description of the finding '''
+
     def __init__(
         self,
         element,
@@ -366,37 +360,71 @@ class TM():
                 result = False
         return result
 
+    def _dfd_template(self):
+        return """digraph tm {{
+    graph [
+        fontname = Arial;
+        fontsize = 14;
+    ]
+    node [
+        fontname = Arial;
+        fontsize = 14;
+        rankdir = lr;
+    ]
+    edge [
+        shape = none;
+        fontname = Arial;
+        fontsize = 12;
+    ]
+    labelloc = "t";
+    fontsize = 20;
+    nodesep = 1;
+
+{edges}
+}}"""
+
     def dfd(self):
-        print("digraph tm {\n\tgraph [\n\tfontname = Arial;\n\tfontsize = 14;\n\t]")
-        print("\tnode [\n\tfontname = Arial;\n\tfontsize = 14;\n\trankdir = lr;\n\t]")
-        print("\tedge [\n\tshape = none;\n\tfontname = Arial;\n\tfontsize = 12;\n\t]")
-        print('\tlabelloc = "t";\n\tfontsize = 20;\n\tnodesep = 1;\n')
+        edges = []
         for b in self._boundaries:
-            b.dfd()
+            edges.append(b.dfd())
         if self.mergeResponses:
             for e in self._flows:
                 if e.response is not None:
                     e.response._is_drawn = True
         for e in self._elements:
             if not e._is_drawn and e.inBoundary is None:
-                e.dfd(mergeResponses=self.mergeResponses)
-        print("}")
+                edges.append(e.dfd(mergeResponses=self.mergeResponses))
+
+        return self._dfd_template().format(edges=indent("\n".join(edges), "    "))
+
+    def _seq_template(self):
+        return """@startuml
+{participants}
+
+{messages}
+@enduml"""
 
     def seq(self):
-        print("@startuml")
+        participants = []
         for e in self._elements:
             if isinstance(e, Actor):
-                print("actor {0} as \"{1}\"".format(e._uniq_name(), e.name))
+                participants.append("actor {0} as \"{1}\"".format(e._uniq_name(), e.name))
             elif isinstance(e, Datastore):
-                print("database {0} as \"{1}\"".format(e._uniq_name(), e.name))
+                participants.append("database {0} as \"{1}\"".format(e._uniq_name(), e.name))
             elif not isinstance(e, Dataflow) and not isinstance(e, Boundary):
-                print("entity {0} as \"{1}\"".format(e._uniq_name(), e.name))
+                participants.append("entity {0} as \"{1}\"".format(e._uniq_name(), e.name))
 
+        messages = []
         for e in self._flows:
-            print("{0} -> {1}: {2}".format(e.source._uniq_name(), e.sink._uniq_name(), e.name))
+            message = "{0} -> {1}: {2}".format(e.source._uniq_name(), e.sink._uniq_name(), e.name)
+            note = ""
             if e.note != "":
-                print("note left\n{}\nend note".format(e.note))
-        print("@enduml")
+                note = "\nnote left\n{}\nend note".format(e.note)
+            messages.append("{}{}".format(message, note))
+
+        return self._seq_template().format(
+            participants="\n".join(participants), messages="\n".join(messages)
+        )
 
     def report(self, *args, **kwargs):
         result = get_args()
@@ -404,30 +432,27 @@ class TM():
         with open(self._template) as file:
             template = file.read()
 
-        output = self._sf.format(
-            template,
-            tm=self,
-            dataflows=self._flows,
-            threats=self._threats,
-            findings=self._findings,
-            elements=self._elements,
-            boundaries=self._boundaries,
-        )
-        print(output)
+        data = {
+            "tm": self,
+            "dataflows": self._flows,
+            "threats": self._threats,
+            "findings": self._findings,
+            "elements": self._elements,
+            "boundaries": self._boundaries,
+        }
+        return self._sf.format(template, **data)
 
     def process(self):
         self.check()
         result = get_args()
         logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-        if result.debug:
-            logger.setLevel(logging.DEBUG)
         if result.seq is True:
-            self.seq()
+            print(self.seq())
         if result.dfd is True:
-            self.dfd()
+            print(self.dfd())
         if result.report is not None:
             self.resolve()
-            self.report()
+            print(self.report())
         if result.exclude is not None:
             self._threatsExcluded = result.exclude.split(",")
         if result.describe is not None:
@@ -441,7 +466,6 @@ class TM():
             [print("\t{}".format(i)) for i in dir(c) if not callable(i) and match("__", i) is None]
         if result.list is True:
             [print("{} - {}".format(t.id, t.description)) for t in self._threats]
-            exit(0)
 
 
 class Element():
@@ -483,12 +507,39 @@ class Element():
         ''' makes sure it is good to go '''
         return True
 
+    def _dfd_template(self):
+        return """{uniq_name} [
+    shape = {shape};
+    color = {color};
+    label = <
+        <table border="0" cellborder="0" cellpadding="2">
+            <tr><td><b>{label}</b></td></tr>
+        </table>
+    >;
+]
+"""
+
     def dfd(self, **kwargs):
         self._is_drawn = True
-        label = _setLabel(self)
-        print("%s [\n\tshape = square;" % self._uniq_name())
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(label))
-        print("]")
+        return self._dfd_template().format(
+            uniq_name=self._uniq_name(),
+            label=self._label(),
+            color=self._color(),
+            shape=self._shape(),
+        )
+
+    def _color(self):
+        if self.inScope is True:
+            return "black"
+        else:
+            return "grey69"
+
+    def _label(self):
+        return "<br/>".join(wrap(self.name, 14))
+
+    def _shape(self):
+        return "square"
+
 
     def _safeset(self, attr, value):
         try:
@@ -516,14 +567,29 @@ class Lambda(Element):
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
+    def _dfd_template(self):
+        return """{uniq_name} [
+    shape = none;
+    fixedsize = shape;
+    image="{image}";
+    imagescale = true;
+    color = {color};
+    label = <
+        <table border="0" cellborder="0" cellpadding="2">
+            <tr><td><b>{label}</b></td></tr>
+        </table>
+    >;
+]
+"""
+
     def dfd(self, **kwargs):
         self._is_drawn = True
-        color = _setColor(self)
-        pngpath = os.path.dirname(__file__) + "/images/lambda.png"
-        label = _setLabel(self)
-        print('{0} [\n\tshape = none\n\tfixedsize=shape\n\timage="{2}"\n\timagescale=true\n\tcolor = {1}'.format(self._uniq_name(), color, pngpath))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{}</b></td></tr></table>>;'.format(label))
-        print("]")
+        return self._dfd_template().format(
+            uniq_name=self._uniq_name(),
+            label=self._label(),
+            color=self._color(),
+            image=os.path.join(dirname(__file__), "images", "lambda.png"),
+        )
 
 
 class Server(Element):
@@ -563,13 +629,8 @@ class Server(Element):
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
-    def dfd(self, **kwargs):
-        self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = circle\n\tcolor = {1}".format(self._uniq_name(), color))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{}</b></td></tr></table>>;'.format(label))
-        print("]")
+    def _shape(self):
+        return "circle"
 
 
 class ExternalEntity(Element):
@@ -608,13 +669,17 @@ class Datastore(Element):
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
-    def dfd(self, **kwargs):
-        self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = none;\n\tcolor = {1};".format(self._uniq_name(), color))
-        print('\tlabel = <<table sides="TB" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
-        print("]")
+    def _dfd_template(self):
+        return """{uniq_name} [
+    shape = none;
+    color = {color};
+    label = <
+        <table sides="TB" cellborder="0" cellpadding="2">
+            <tr><td><b>{label}</b></td></tr>
+        </table>
+    >;
+]
+"""
 
 
 class Actor(Element):
@@ -624,13 +689,6 @@ class Actor(Element):
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
-
-    def dfd(self, **kwargs):
-        self._is_drawn = True
-        label = _setLabel(self)
-        print("%s [\n\tshape = square;" % self._uniq_name())
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(label))
-        print("]")
 
 
 class Process(Element):
@@ -674,26 +732,17 @@ class Process(Element):
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
-    def dfd(self, **kwargs):
-        self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = circle;\n\tcolor = {1};\n".format(self._uniq_name(), color))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
-        print("]")
+    def _shape(self):
+        return "circle"
 
 
 class SetOfProcesses(Process):
+
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
-    def dfd(self, **kwargs):
-        self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = doublecircle;\n\tcolor = {1};\n".format(self._uniq_name(), color))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
-        print("]")
+    def _shape(self):
+        return "doublecircle"
 
 
 class Dataflow(Element):
@@ -722,30 +771,33 @@ class Dataflow(Element):
         self.sink = sink
         super().__init__(name, **kwargs)
 
-    def __set__(self, instance, value):
-        print("Should not have gotten here.")
+    def _dfd_template(self):
+        return """{source} -> {sink} [
+    color = {color};
+    dir = {direction};
+    label = <
+        <table border="0" cellborder="0" cellpadding="2">
+            <tr><td><font color="{color}"><b>{label}</b></font></td></tr>
+        </table>
+    >;
+]
+"""
 
     def dfd(self, mergeResponses=False, **kwargs):
         self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        if self.order >= 0:
-            label = '({0}) {1}'.format(self.order, label)
         direction = "forward"
+        label = self._label()
         if mergeResponses and self.response is not None:
             direction = "both"
-            resp_label = _setLabel(self.response)
-            if self.response.order >= 0:
-                resp_label = "({0}) {1}".format(self.response.order, resp_label)
-            label += "<br/>" + resp_label
-        print("\t{0} -> {1} [\n\t\tcolor = {2};\n\t\tdir = {3};\n".format(
-            self.source._uniq_name(),
-            self.sink._uniq_name(),
-            color,
-            direction,
-        ))
-        print('\t\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
-        print("\t]")
+            label += "<br/>" + self.response._label()
+
+        return self._dfd_template().format(
+            source=self.source._uniq_name(),
+            sink=self.sink._uniq_name(),
+            direction=direction,
+            label=label,
+            color=self._color(),
+        )
 
 
 class Boundary(Element):
@@ -754,26 +806,39 @@ class Boundary(Element):
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
+    def _dfd_template(self):
+        return """subgraph cluster_{uniq_name} {{
+    graph [
+        fontsize = 10;
+        fontcolor = firebrick2;
+        style = dashed;
+        color = firebrick2;
+        label = <<i>{label}</i>>;
+    ]
+
+{edges}
+}}
+"""
+
     def dfd(self):
         if self._is_drawn:
             return
-
-        self._is_drawn = True
-        logger.debug("Now drawing boundary " + self.name)
-        label = self.name
-        print("subgraph cluster_{0} {{\n\tgraph [\n\t\tfontsize = 10;\n\t\tfontcolor = firebrick2;\n\t\tstyle = dashed;\n\t\tcolor = firebrick2;\n\t\tlabel = <<i>{1}</i>>;\n\t]\n".format(self._uniq_name(), label))
+        edges = []
         for e in self.elements:
             if e._is_drawn:
                 continue
             # The content to draw can include Boundary objects
-            logger.debug("Now drawing content {}".format(e.name))
-            e.dfd()
-        print("\n}\n")
+            edges.append(e.dfd())
+        self._is_drawn = True
+        return self._dfd_template().format(
+            uniq_name=self._uniq_name(),
+            label=self._label(),
+            edges=indent("\n".join(edges), "    "),
+        )
 
 
 def get_args():
     _parser = argparse.ArgumentParser()
-    _parser.add_argument('--debug', action='store_true', help='print debug messages')
     _parser.add_argument('--dfd', action='store_true', help='output DFD')
     _parser.add_argument('--report', help='output report using the named template file (sample template file is under docs/template.md)')
     _parser.add_argument('--exclude', help='specify threat IDs to be ignored')
