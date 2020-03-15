@@ -138,18 +138,24 @@ def _match_responses(flows):
     return flows
 
 
-def _applyDefaults(elements):
+def _apply_defaults(elements):
     for e in elements:
         e._safeset("data", e.source.data)
+
         if e.isResponse:
             e._safeset("protocol", e.source.protocol)
             e._safeset("srcPort", e.source.port)
             e._safeset("isEncrypted", e.source.isEncrypted)
-        else:
-            e._safeset("protocol", e.sink.protocol)
-            e._safeset("dstPort", e.sink.port)
-            if hasattr(e.sink, "isEncrypted"):
-                e._safeset("isEncrypted", e.sink.isEncrypted)
+            continue
+
+        e._safeset("protocol", e.sink.protocol)
+        e._safeset("dstPort", e.sink.port)
+        if hasattr(e.sink, "isEncrypted"):
+            e._safeset("isEncrypted", e.sink.isEncrypted)
+        try:
+            e.sink.hasIncomingDataflow = True
+        except (AttributeError, ValueError):
+            pass
 
 
 ''' End of help functions '''
@@ -252,7 +258,7 @@ class TM():
     def check(self):
         if self.description is None:
             raise ValueError("Every threat model should have at least a brief description of the system being modeled.")
-        _applyDefaults(TM._BagOfFlows)
+        _apply_defaults(TM._BagOfFlows)
         for e in (TM._BagOfElements):
             e.check()
         TM._BagOfFlows = _match_responses(_sort(TM._BagOfFlows, self.isOrdered))
@@ -400,6 +406,7 @@ class Lambda(Element):
     implementsAPI = varBool(False)
     authorizesSource = varBool(False)
     data = varString("")
+    hasIncomingDataflow = varBool(False)
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
@@ -419,6 +426,7 @@ class Server(Element):
     isEncrypted = varBool(False)
     protocol = varString("")
     data = varString("")
+    hasIncomingDataflow = varBool(False)
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
     authenticatesSource = varBool(False)
@@ -472,6 +480,7 @@ class Datastore(Element):
     isEncrypted = varBool(False)
     protocol = varString("")
     data = varString("")
+    hasIncomingDataflow = varBool(False)
     onRDS = varBool(False)
     storesLogData = varBool(False)
     storesPII = varBool(False)
@@ -509,6 +518,7 @@ class Actor(Element):
     port = varInt(-1)
     protocol = varString("")
     data = varString("")
+    hasIncomingDataflow = varBool(False)
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
@@ -526,6 +536,7 @@ class Process(Element):
     isEncrypted = varBool(False)
     protocol = varString("")
     data = varString("")
+    hasIncomingDataflow = varBool(False)
     codeType = varString("Unmanaged")
     implementsCommunicationProtocol = varBool(False)
     providesConfidentiality = varBool(False)
