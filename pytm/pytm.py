@@ -4,6 +4,7 @@ import logging
 import random
 import uuid
 from collections import defaultdict
+from collections.abc import Iterable
 from hashlib import sha224
 from os.path import dirname
 from re import match
@@ -56,6 +57,23 @@ class varString(var):
         if not isinstance(value, str):
             raise ValueError("expecting a String value, got a {}".format(type(value)))
         super().__set__(instance, value)
+
+
+class varStrings(var):
+    def __init__(self, default=None, onSet=None):
+        super().__init__(default, onSet=onSet)
+        if self.default is None:
+            self.default = []
+
+    def __set__(self, instance, value):
+        for i, e in enumerate(value):
+            if not isinstance(e, str):
+                raise ValueError(
+                    "expecting a list of Strings, item number {} is a {}".format(
+                        i, type(value)
+                    )
+                )
+        super().__set__(instance, list(value))
 
 
 class varBoundary(var):
@@ -164,16 +182,28 @@ class Threat():
     mitigations = varString("")
     example = varString("")
     references = varString("")
-    target = ()
+    target = varStrings()
+    categories = varStrings()
 
     ''' Represents a possible threat '''
     def __init__(self, json_read):
         self.id = json_read['SID']
         self.description = json_read['description']
         self.condition = json_read['condition']
-        self.target = json_read['target']
+        if not isinstance(json_read["target"], str) and isinstance(
+            json_read["target"], Iterable
+        ):
+            self.target = list(json_read["target"])
+        else:
+            self.target = [json_read["target"]]
         self.details = json_read['details']
         self.severity = json_read['severity']
+        if not isinstance(json_read["categories"], str) and isinstance(
+            json_read["categories"], Iterable
+        ):
+            self.categories = list(json_read["categories"])
+        else:
+            self.categories = [json_read["categories"]]
         self.mitigations = json_read['mitigations']
         self.example = json_read['example']
         self.references = json_read['references']
@@ -190,7 +220,20 @@ class Threat():
 
 class Finding():
     ''' This class represents a Finding - the element in question and a description of the finding '''
-    def __init__(self, element, description, details, severity, mitigations, example, id, references):
+
+    def __init__(
+        self,
+        element,
+        description=None,
+        details=None,
+        severity=None,
+        mitigations=None,
+        example=None,
+        id=None,
+        references=None,
+        categories=None,
+        threat=None,
+    ):
         self.target = element
         self.description = description
         self.details = details
@@ -199,6 +242,20 @@ class Finding():
         self.example = example
         self.id = id
         self.references = references
+        self._categories = categories
+        if threat is not None:
+            self.description = threat.description
+            self.details = threat.details
+            self.severity = threat.severity
+            self.mitigations = threat.mitigations
+            self.example = threat.example
+            self.id = threat.id
+            self.references = threat.references
+            self._categories = threat.categories
+
+    @property
+    def categories(self):
+        return ', '.join(self._categories)
 
 
 class TM():
@@ -244,10 +301,12 @@ class TM():
 
     def resolve(self):
         for e in (TM._BagOfElements):
-            if e.inScope is True:
-                for t in TM._BagOfThreats:
-                    if t.apply(e) is True:
-                        TM._BagOfFindings.append(Finding(e.name, t.description, t.details, t.severity, t.mitigations, t.example, t.id, t.references))
+            if not e.inScope:
+                continue
+            for t in TM._BagOfThreats:
+                if not t.apply(e):
+                    continue
+                TM._BagOfFindings.append(Finding(e.name, threat=t))
 
     def check(self):
         if self.description is None:
