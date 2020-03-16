@@ -376,12 +376,12 @@ class TM():
     def check(self):
         if self.description is None:
             raise ValueError("Every threat model should have at least a brief description of the system being modeled.")
-        _apply_defaults(TM._BagOfFlows)
         if self.ignoreUnused:
             TM._BagOfElements, TM._BagOfBoundaries = _get_elements_and_boundaries(TM._BagOfFlows)
         for e in (TM._BagOfElements):
             e.check()
         TM._BagOfFlows = _match_responses(_sort(TM._BagOfFlows, self.isOrdered))
+        _apply_defaults(TM._BagOfFlows)
         if self.ignoreUnused:
             # cannot rely on user defined order if assets are re-used in multiple models
             TM._BagOfElements = _sort_elem(TM._BagOfElements)
