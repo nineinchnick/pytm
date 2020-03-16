@@ -292,7 +292,7 @@ class Finding():
         categories=None,
         threat=None,
     ):
-        self.target = element
+        self.target = element.name
         self.description = description
         self.details = details
         self.severity = severity
@@ -366,7 +366,7 @@ class TM():
             for t in TM._BagOfThreats:
                 if not t.apply(e):
                     continue
-                f = Finding(e.name, threat=t)
+                f = Finding(e, threat=t)
                 findings.append(f)
                 elements[e].append(f)
         self.findings = findings
