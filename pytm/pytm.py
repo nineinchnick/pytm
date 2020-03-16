@@ -5,6 +5,7 @@ import logging
 import random
 import sys
 import uuid
+import sys
 from collections import defaultdict
 from collections.abc import Iterable
 from hashlib import sha224
@@ -62,10 +63,6 @@ class varString(var):
 
 
 class varStrings(var):
-    def __init__(self, default=None, onSet=None):
-        super().__init__(default, onSet=onSet)
-        if self.default is None:
-            self.default = []
 
     def __set__(self, instance, value):
         for i, e in enumerate(value):
@@ -105,6 +102,19 @@ class varElement(var):
             raise ValueError("expecting an Element (or inherited) "
                              "value, got a {}".format(type(value)))
         super().__set__(instance, value)
+
+
+class varFindings(var):
+
+    def __set__(self, instance, value):
+        for i, e in enumerate(value):
+            if not isinstance(e, Finding):
+                raise ValueError(
+                    "expecting a list of Findings, item number {} is a {}".format(
+                        i, type(value)
+                    )
+                )
+        super().__set__(instance, list(value))
 
 
 def _setColor(element):
@@ -218,6 +228,8 @@ def _get_elements_and_boundaries(flows):
 
 
 class Threat():
+    ''' Represents a possible threat '''
+
     id = varString("")
     description = varString("")
     condition = varString("")
@@ -226,37 +238,29 @@ class Threat():
     mitigations = varString("")
     example = varString("")
     references = varString("")
-    target = varStrings()
-    categories = varStrings()
+    target = var(tuple())
+    categories = varStrings([])
 
-    ''' Represents a possible threat '''
-    def __init__(self, json_read):
-        self.id = json_read['SID']
-        self.description = json_read['description']
-        self.condition = json_read['condition']
-        if not isinstance(json_read["target"], str) and isinstance(
-            json_read["target"], Iterable
-        ):
-            self.target = list(json_read["target"])
+    def __init__(self, **kwargs):
+        self.id = kwargs['SID']
+        self.description = kwargs.get('description', '')
+        self.condition = kwargs.get('condition', 'True')
+        target = kwargs.get('target', 'Element')
+        if not isinstance(target, str) and isinstance(target, Iterable):
+            target = tuple(target)
         else:
-            self.target = [json_read["target"]]
-        self.details = json_read['details']
-        self.severity = json_read['severity']
-        if not isinstance(json_read["categories"], str) and isinstance(
-            json_read["categories"], Iterable
-        ):
-            self.categories = list(json_read["categories"])
+            target = (target,)
+        self.target = tuple(getattr(sys.modules[__name__], x) for x in target)
+        self.details = kwargs.get('details', '')
+        self.severity = kwargs.get('severity', '')
+        self.mitigations = kwargs.get('mitigations', '')
+        self.example = kwargs.get('example', '')
+        self.references = kwargs.get('references', '')
+        categories = kwargs.get('categories', [])
+        if not isinstance(categories, str) and isinstance(categories, Iterable):
+            self.categories = list(categories)
         else:
-            self.categories = [json_read["categories"]]
-        self.mitigations = json_read['mitigations']
-        self.example = json_read['example']
-        self.references = json_read['references']
-
-        if not isinstance(self.target, str) and isinstance(self.target, Iterable):
-            self.target = tuple(self.target)
-        else:
-            self.target = (self.target,)
-        self.target = tuple(getattr(sys.modules[__name__], x) for x in self.target)
+            self.categories = [categories]
 
     def __repr__(self):
         return "<{0}.{1}({2}) at {3}>".format(
@@ -317,7 +321,6 @@ class TM():
     _BagOfFlows = []
     _BagOfElements = []
     _BagOfThreats = []
-    _BagOfFindings = []
     _BagOfBoundaries = []
     _threatsExcluded = []
     _sf = None
@@ -327,6 +330,7 @@ class TM():
     isOrdered = varBool(False)
     mergeResponses = varBool(False)
     ignoreUnused = varBool(False)
+    findings = varFindings([])
 
     def __init__(self, name, **kwargs):
         for key, value in kwargs.items():
@@ -340,7 +344,6 @@ class TM():
         cls._BagOfFlows = []
         cls._BagOfElements = []
         cls._BagOfThreats = []
-        cls._BagOfFindings = []
         cls._BagOfBoundaries = []
 
     def _init_threats(self):
@@ -352,16 +355,23 @@ class TM():
             threats_json = json.load(threat_file)
 
         for i in threats_json:
-            TM._BagOfThreats.append(Threat(i))
+            TM._BagOfThreats.append(Threat(**i))
 
     def resolve(self):
-        for e in (TM._BagOfElements):
+        findings = []
+        elements = defaultdict(list)
+        for e in TM._BagOfElements:
             if not e.inScope:
                 continue
             for t in TM._BagOfThreats:
                 if not t.apply(e):
                     continue
-                TM._BagOfFindings.append(Finding(e.name, threat=t))
+                f = Finding(e.name, threat=t)
+                findings.append(f)
+                elements[e].append(f)
+        self.findings = findings
+        for e, findings in elements.items():
+            e.findings = findings
 
     def check(self):
         if self.description is None:
@@ -416,7 +426,7 @@ class TM():
         with open(self._template) as file:
             template = file.read()
 
-        print(self._sf.format(template, tm=self, dataflows=self._BagOfFlows, threats=self._BagOfThreats, findings=self._BagOfFindings, elements=self._BagOfElements, boundaries=self._BagOfBoundaries))
+        print(self._sf.format(template, tm=self, dataflows=self._BagOfFlows, threats=self._BagOfThreats, findings=self.findings, elements=self._BagOfElements, boundaries=self._BagOfBoundaries))
 
     def process(self):
         self.check()
@@ -460,6 +470,7 @@ class Element():
     definesConnectionTimeout = varBool(False)
     OS = varString("")
     isAdmin = varBool(False)
+    findings = varFindings([])
 
     def __init__(self, name, **kwargs):
         for key, value in kwargs.items():
