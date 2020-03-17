@@ -293,6 +293,7 @@ class Finding():
         threat=None,
     ):
         self.target = element.name
+        self.element = element
         self.description = description
         self.details = details
         self.severity = severity
