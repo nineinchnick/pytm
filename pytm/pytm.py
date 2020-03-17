@@ -203,6 +203,7 @@ def _apply_defaults(flows):
         e._safeset("dstPort", e.sink.port)
         if hasattr(e.sink, "isEncrypted"):
             e._safeset("isEncrypted", e.sink.isEncrypted)
+        e._safeset("authenticatesDestination", e.source.authenticatesDestination)
         try:
             e.sink.hasIncomingDataflow = True
         except (AttributeError, ValueError):
@@ -469,6 +470,7 @@ class Element():
     implementsNonce = varBool(False)
     handlesResources = varBool(False)
     definesConnectionTimeout = varBool(False)
+    authenticatesDestination = varBool(False)
     OS = varString("")
     isAdmin = varBool(False)
     findings = varFindings([])
@@ -602,7 +604,6 @@ class Server(Element):
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
     authenticatesSource = varBool(False)
-    authenticatesDestination = varBool(False)
     sanitizesInput = varBool(False)
     encodesOutput = varBool(False)
     hasAccessControl = varBool(False)
@@ -661,7 +662,6 @@ class Datastore(Element):
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
     authenticatesSource = varBool(False)
-    authenticatesDestination = varBool(False)
     isShared = varBool(False)
     hasWriteAccess = varBool(False)
     handlesResourceConsumption = varBool(False)
@@ -714,7 +714,6 @@ class Process(Element):
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
     authenticatesSource = varBool(False)
-    authenticatesDestination = varBool(False)
     isResilient = varBool(False)
     hasAccessControl = varBool(False)
     tracksExecutionFlow = varBool(False)
