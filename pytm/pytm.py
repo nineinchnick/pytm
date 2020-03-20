@@ -117,6 +117,18 @@ class varFindings(var):
         super().__set__(instance, list(value))
 
 
+class varElements(var):
+    def __set__(self, instance, value):
+        for i, e in enumerate(value):
+            if not isinstance(e, Element):
+                raise ValueError(
+                    "expecting a list of Elements, item number {} is a {}".format(
+                        type(value)
+                    )
+                )
+        super().__set__(instance, list(value))
+
+
 def _setColor(element):
     if element.inScope is True:
         return "black"
@@ -190,6 +202,8 @@ def _match_responses(flows):
 
 
 def _apply_defaults(flows):
+    inputs = defaultdict(list)
+    outputs = defaultdict(list)
     for e in flows:
         e._safeset("data", e.source.data)
 
@@ -204,8 +218,18 @@ def _apply_defaults(flows):
         if hasattr(e.sink, "isEncrypted"):
             e._safeset("isEncrypted", e.sink.isEncrypted)
         e._safeset("authenticatesDestination", e.source.authenticatesDestination)
+
+        outputs[e.source].append(e)
+        inputs[e.sink].append(e)
+
+    for e, flows in inputs.items():
         try:
-            e.sink.hasIncomingDataflow = True
+            e.inputs = flows
+        except (AttributeError, ValueError):
+            pass
+    for e, flows in outputs.items():
+        try:
+            e.outputs = flows
         except (AttributeError, ValueError):
             pass
 
@@ -387,6 +411,11 @@ class TM():
         if self.ignoreUnused:
             # cannot rely on user defined order if assets are re-used in multiple models
             TM._BagOfElements = _sort_elem(TM._BagOfElements)
+        result = True
+        for e in (TM._BagOfElements):
+            if not e.check():
+                result = False
+        return result
 
     def dfd(self):
         print("digraph tm {\n\tgraph [\n\tfontname = Arial;\n\tfontsize = 14;\n\t]")
@@ -499,10 +528,6 @@ class Element():
 
     def check(self):
         return True
-        ''' makes sure it is good to go '''
-        # all minimum annotations are in place
-        if self.description == "" or self.name == "":
-            raise ValueError("Element {} need a description and a name.".format(self.name))
 
     def dfd(self, **kwargs):
         self._is_drawn = True
@@ -580,7 +605,8 @@ class Lambda(Element):
     implementsAPI = varBool(False)
     authorizesSource = varBool(False)
     data = varString("")
-    hasIncomingDataflow = varBool(False)
+    inputs = varElements([])
+    outputs = varElements([])
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
@@ -600,7 +626,8 @@ class Server(Element):
     isEncrypted = varBool(False)
     protocol = varString("")
     data = varString("")
-    hasIncomingDataflow = varBool(False)
+    inputs = varElements([])
+    outputs = varElements([])
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
     authenticatesSource = varBool(False)
@@ -653,7 +680,8 @@ class Datastore(Element):
     isEncrypted = varBool(False)
     protocol = varString("")
     data = varString("")
-    hasIncomingDataflow = varBool(False)
+    inputs = varElements([])
+    outputs = varElements([])
     onRDS = varBool(False)
     storesLogData = varBool(False)
     storesPII = varBool(False)
@@ -690,7 +718,8 @@ class Actor(Element):
     port = varInt(-1)
     protocol = varString("")
     data = varString("")
-    hasIncomingDataflow = varBool(False)
+    inputs = varElements([])
+    outputs = varElements([])
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
@@ -708,7 +737,8 @@ class Process(Element):
     isEncrypted = varBool(False)
     protocol = varString("")
     data = varString("")
-    hasIncomingDataflow = varBool(False)
+    inputs = varElements([])
+    outputs = varElements([])
     codeType = varString("Unmanaged")
     implementsCommunicationProtocol = varBool(False)
     providesConfidentiality = varBool(False)
@@ -795,12 +825,6 @@ class Dataflow(Element):
 
     def __set__(self, instance, value):
         print("Should not have gotten here.")
-
-    def check(self):
-        ''' makes sure it is good to go '''
-        # all minimum annotations are in place
-        # then add itself to _BagOfFlows
-        pass
 
     def dfd(self, mergeResponses=False, **kwargs):
         self._is_drawn = True
