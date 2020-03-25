@@ -326,8 +326,7 @@ class Testpytm(unittest.TestCase):
         web = Server("Web Server")
         process1.handlesResourceConsumption = False
         process1.isResilient = False
-        web.handlesResourceConsumption = False
-        web.isResilient = False
+        web.handlesResourceConsumption = True
         threat = threats["DO01"]
         self.assertTrue(threat.apply(process1))
         self.assertTrue(threat.apply(web))

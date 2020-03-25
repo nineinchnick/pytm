@@ -10,8 +10,6 @@ from collections import defaultdict
 from collections.abc import Iterable
 from hashlib import sha224
 from os.path import dirname
-from re import match
-from sys import exit, stderr
 from textwrap import wrap
 from weakref import WeakKeyDictionary
 
@@ -29,8 +27,11 @@ logger = logging.getLogger(__name__)
 
 class var(object):
     ''' A descriptor that allows setting a value only once '''
-    def __init__(self, default, onSet=None):
+
+    def __init__(self, default, required=False, doc="", onSet=None):
         self.default = default
+        self.required = required
+        self.doc = doc
         self.data = WeakKeyDictionary()
         self.onSet = onSet
 
@@ -38,6 +39,8 @@ class var(object):
         # when x.d is called we get here
         # instance = x
         # owner = type(x)
+        if instance is None:
+            return self
         return self.data.get(instance, self.default)
 
     def __set__(self, instance, value):
@@ -46,16 +49,17 @@ class var(object):
         # value = val
         if instance in self.data:
             raise ValueError(
-                    "cannot overwrite {} value with {}, already set to {}".format(
-                        self.__class__.__name__, value, self.data[instance]
-                    )
-                  )
+                "cannot overwrite {} value with {}, already set to {}".format(
+                    self.__class__.__name__, value, self.data[instance]
+                )
+            )
         self.data[instance] = value
         if self.onSet is not None:
             self.onSet(instance, value)
 
 
 class varString(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, str):
             raise ValueError("expecting a String value, got a {}".format(type(value)))
@@ -76,6 +80,7 @@ class varStrings(var):
 
 
 class varBoundary(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, Boundary):
             raise ValueError("expecting a Boundary value, got a {}".format(type(value)))
@@ -83,6 +88,7 @@ class varBoundary(var):
 
 
 class varBool(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, bool):
             raise ValueError("expecting a boolean value, got a {}".format(type(value)))
@@ -90,6 +96,7 @@ class varBool(var):
 
 
 class varInt(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, int):
             raise ValueError("expecting an integer value, got a {}".format(type(value)))
@@ -97,6 +104,7 @@ class varInt(var):
 
 
 class varElement(var):
+
     def __set__(self, instance, value):
         if not isinstance(value, Element):
             raise ValueError("expecting an Element (or inherited) "
@@ -249,15 +257,42 @@ def _get_elements_and_boundaries(flows):
     return (elements.keys(), boundaries.keys())
 
 
+def _describe_classes(classes):
+    for name in classes:
+        klass = getattr(sys.modules[__name__], name, None)
+        if klass is None:
+            logger.error("No such class to describe: %s\n", name)
+            sys.exit(1)
+        print("{} class attributes:".format(name))
+        attrs = []
+        for i in dir(klass):
+            if i.startswith("_") or callable(getattr(klass, i)):
+                continue
+            attrs.append(i)
+        longest = len(max(attrs, key=len)) + 2
+        for i in attrs:
+            attr = getattr(klass, i, {})
+            docs = []
+            if isinstance(attr, var):
+                if attr.doc:
+                    docs.append(attr.doc)
+                if attr.required:
+                    docs.append("required")
+                if attr.default or isinstance(attr.default, bool):
+                    docs.append("default: {}".format(attr.default))
+            print("  {}{}".format(i.ljust(longest, " "), ", ".join(docs)))
+        print()
+
+
 ''' End of help functions '''
 
 
 class Threat():
-    ''' Represents a possible threat '''
+    """Represents a possible threat"""
 
-    id = varString("")
+    id = varString("", required=True)
     description = varString("")
-    condition = varString("")
+    condition = varString("", doc="a Python expression that should evaluate to a boolean True or False")
     details = varString("")
     severity = varString("")
     mitigations = varString("")
@@ -302,7 +337,17 @@ class Threat():
 
 
 class Finding():
-    ''' This class represents a Finding - the element in question and a description of the finding '''
+    """Represents a Finding - the element in question and a description of the finding """
+
+    element = varElement(None, required=True, doc="Element this finding applies to")
+    target = varString("", doc="Name of the element this finding applies to")
+    description = varString("", required=True, doc="Threat description")
+    details = varString("", required=True, doc="Threat details")
+    severity = varString("", required=True, doc="Threat severity")
+    mitigations = varString("", required=True, doc="Threat mitigations")
+    example = varString("", required=True, doc="Threat example")
+    id = varString("", required=True, doc="Threat ID")
+    references = varString("", required=True, doc="Threat references")
 
     def __init__(
         self,
@@ -319,15 +364,23 @@ class Finding():
     ):
         self.target = element.name
         self.element = element
-        self.description = description
-        self.details = details
-        self.severity = severity
-        self.mitigations = mitigations
-        self.example = example
-        self.id = id
-        self.references = references
-        self._categories = categories
-        if threat is not None:
+        if description:
+            self.description = description
+        if details:
+            self.details = details
+        if severity:
+            self.severity = severity
+        if mitigations:
+            self.mitigations = mitigations
+        if example:
+            self.example = example
+        if id:
+            self.id = id
+        if references:
+            self.references = references
+        if categories:
+            self._categories = categories
+        if threat:
             self.description = threat.description
             self.details = threat.details
             self.severity = threat.severity
@@ -343,18 +396,21 @@ class Finding():
 
 
 class TM():
-    ''' Describes the threat model administratively, and holds all details during a run '''
+    """Describes the threat model administratively, and holds all details during a run"""
+
     _BagOfFlows = []
     _BagOfElements = []
     _BagOfThreats = []
     _BagOfBoundaries = []
     _threatsExcluded = []
     _sf = None
-    description = varString("")
+    name = varString("", required=True, doc="Model name")
+    description = varString("", required=True, doc="Model description")
     threatsFile = varString(dirname(__file__) + "/threatlib/threats.json",
-                            onSet=lambda i, v: i._init_threats())
-    isOrdered = varBool(False)
-    mergeResponses = varBool(False)
+                            onSet=lambda i, v: i._init_threats(),
+                            doc="JSON file with custom threats")
+    isOrdered = varBool(False, doc="Automatically order all Dataflows")
+    mergeResponses = varBool(False, doc="Merge response edges in DFDs")
     ignoreUnused = varBool(False)
     findings = varFindings([])
 
@@ -475,26 +531,21 @@ class TM():
         if result.exclude is not None:
             TM._threatsExcluded = result.exclude.split(",")
         if result.describe is not None:
-            try:
-                one_word = result.describe.split()[0]
-                c = eval(one_word)
-            except Exception:
-                stderr.write("No such class to describe: {}\n".format(result.describe))
-                exit(-1)
-            print("The following properties are available for " + result.describe)
-            [print("\t{}".format(i)) for i in dir(c) if not callable(i) and match("__", i) is None]
+            _describe_classes(result.describe.split())
         if result.list is True:
             [print("{} - {}".format(t.id, t.description)) for t in TM._BagOfThreats]
-            exit(0)
+            sys.exit(0)
 
 
 class Element():
-    name = varString("")
+    """A generic element"""
+
+    name = varString("", required=True)
     description = varString("")
-    inBoundary = varBoundary(None)
+    inBoundary = varBoundary(None, doc="Trust boundary this element exists in")
+    inScope = varBool(True, doc="Is the element in scope of the threat model")
     onAWS = varBool(False)
     isHardened = varBool(False)
-    inScope = varBool(True)
     implementsAuthenticationScheme = varBool(False)
     implementsNonce = varBool(False)
     handlesResources = varBool(False)
@@ -591,6 +642,13 @@ class Element():
 
 
 class Lambda(Element):
+    """A lambda function running in a Function-as-a-Service (FaaS) environment"""
+
+    port = varInt(-1, doc="Default TCP port for outgoing data flows")
+    protocol = varString("", doc="Default network protocol for outgoing data flows")
+    data = varString("", doc="Default type of data in outgoing data flows")
+    inputs = varElements([])
+    outputs = varElements([])
     onAWS = varBool(True)
     authenticatesSource = varBool(False)
     hasAccessControl = varBool(False)
@@ -604,9 +662,6 @@ class Lambda(Element):
     environment = varString("")
     implementsAPI = varBool(False)
     authorizesSource = varBool(False)
-    data = varString("")
-    inputs = varElements([])
-    outputs = varElements([])
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
@@ -622,10 +677,12 @@ class Lambda(Element):
 
 
 class Server(Element):
-    port = varInt(-1)
-    isEncrypted = varBool(False)
-    protocol = varString("")
-    data = varString("")
+    """An entity processing data"""
+
+    port = varInt(-1, doc="Default TCP port for incoming data flows")
+    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
+    protocol = varString("", doc="Default network protocol for incoming data flows")
+    data = varString("", doc="Default type of data in incoming data flows")
     inputs = varElements([])
     outputs = varElements([])
     providesConfidentiality = varBool(False)
@@ -636,6 +693,7 @@ class Server(Element):
     hasAccessControl = varBool(False)
     implementsCSRFToken = varBool(False)
     handlesResourceConsumption = varBool(False)
+    isResilient = varBool(False)
     authenticationScheme = varString("")
     validatesInput = varBool(False)
     validatesHeaders = varBool(False)
@@ -676,10 +734,12 @@ class ExternalEntity(Element):
 
 
 class Datastore(Element):
-    port = varInt(-1)
-    isEncrypted = varBool(False)
-    protocol = varString("")
-    data = varString("")
+    """An entity storing data"""
+
+    port = varInt(-1, doc="Default TCP port for incoming data flows")
+    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
+    protocol = varString("", doc="Default network protocol for incoming data flows")
+    data = varString("", doc="Default type of data in incoming data flows")
     inputs = varElements([])
     outputs = varElements([])
     onRDS = varBool(False)
@@ -715,9 +775,11 @@ class Datastore(Element):
 
 
 class Actor(Element):
-    port = varInt(-1)
-    protocol = varString("")
-    data = varString("")
+    """An entity usually initiating actions"""
+
+    port = varInt(-1, doc="Default TCP port for outgoing data flows")
+    protocol = varString("", doc="Default network protocol for outgoing data flows")
+    data = varString("", doc="Default type of data in outgoing data flows")
     inputs = varElements([])
     outputs = varElements([])
 
@@ -733,10 +795,12 @@ class Actor(Element):
 
 
 class Process(Element):
-    port = varInt(-1)
-    isEncrypted = varBool(False)
-    protocol = varString("")
-    data = varString("")
+    """An entity processing data"""
+
+    port = varInt(-1, doc="Default TCP port for incoming data flows")
+    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
+    protocol = varString("", doc="Default network protocol for incoming data flows")
+    data = varString("", doc="Default type of data in incoming data flows")
     inputs = varElements([])
     outputs = varElements([])
     codeType = varString("Unmanaged")
@@ -797,20 +861,21 @@ class SetOfProcesses(Process):
 
 
 class Dataflow(Element):
-    source = varElement(None)
-    sink = varElement(None)
-    isResponse = varBool(False)
-    response = varElement(None)
-    responseTo = varElement(None)
-    srcPort = varInt(-1)
-    dstPort = varInt(-1)
-    isEncrypted = varBool(False)
-    protocol = varString("")
-    data = varString("")
+    """A data flow from a source to a sink"""
+
+    source = varElement(None, required=True)
+    sink = varElement(None, required=True)
+    isResponse = varBool(False, doc="Is a response to another data flow")
+    response = varElement(None, doc="Another data flow that is a response to this one")
+    responseTo = varElement(None, doc="Is a response to this data flow")
+    srcPort = varInt(-1, doc="Source TCP port")
+    dstPort = varInt(-1, doc="Destination TCP port")
+    isEncrypted = varBool(False, doc="Is the data encrypted")
+    protocol = varString("", doc="Protocol used in this data flow")
+    data = varString("", "Type of data carried in this data flow")
     authenticatedWith = varBool(False)
-    order = varInt(-1)
+    order = varInt(-1, doc="Number of this data flow in the threat model")
     implementsCommunicationProtocol = varBool(False)
-    name = varString("")
     note = varString("")
     usesVPN = varBool(False)
     authorizesSource = varBool(False)
@@ -850,6 +915,8 @@ class Dataflow(Element):
 
 
 class Boundary(Element):
+    """Trust boundary"""
+
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
         if name not in TM._BagOfBoundaries:
