@@ -352,43 +352,27 @@ class Finding():
     def __init__(
         self,
         element,
-        description=None,
-        details=None,
-        severity=None,
-        mitigations=None,
-        example=None,
-        id=None,
-        references=None,
-        categories=None,
-        threat=None,
+        **kwargs,
     ):
         self.target = element.name
         self.element = element
-        if description:
-            self.description = description
-        if details:
-            self.details = details
-        if severity:
-            self.severity = severity
-        if mitigations:
-            self.mitigations = mitigations
-        if example:
-            self.example = example
-        if id:
-            self.id = id
-        if references:
-            self.references = references
-        if categories:
-            self._categories = categories
-        if threat:
-            self.description = threat.description
-            self.details = threat.details
-            self.severity = threat.severity
-            self.mitigations = threat.mitigations
-            self.example = threat.example
-            self.id = threat.id
-            self.references = threat.references
-            self._categories = threat.categories
+        threat = kwargs.get("threat", Threat(SID=""))
+        attrs = [
+            "description",
+            "details",
+            "severity",
+            "mitigations",
+            "example",
+            "id",
+            "references",
+        ]
+        for a in attrs:
+            setattr(self, a, getattr(kwargs, a, getattr(threat, a)))
+        setattr(
+            self,
+            "_categories",
+            getattr(kwargs, "categories", getattr(threat, "categories")),
+        )
 
     @property
     def categories(self):
