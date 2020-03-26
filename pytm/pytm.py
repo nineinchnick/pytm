@@ -432,8 +432,9 @@ class Element():
 
     def dfd(self, **kwargs):
         self._is_drawn = True
+        color = _setColor(self)
         label = _setLabel(self)
-        print("%s [\n\tshape = square;" % self._uniq_name())
+        print("{0} [\n\tshape = square;\n\tcolor = {1};".format(self._uniq_name(), color))
         print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(label))
         print("]")
 
@@ -568,7 +569,7 @@ class Server(Element):
         self._is_drawn = True
         color = _setColor(self)
         label = _setLabel(self)
-        print("{0} [\n\tshape = circle\n\tcolor = {1}".format(self._uniq_name(), color))
+        print("{0} [\n\tshape = circle\n\tcolor = {1};".format(self._uniq_name(), color))
         print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{}</b></td></tr></table>>;'.format(label))
         print("]")
 
@@ -632,8 +633,9 @@ class Actor(Element):
 
     def dfd(self, **kwargs):
         self._is_drawn = True
+        color = _setColor(self)
         label = _setLabel(self)
-        print("%s [\n\tshape = square;" % self._uniq_name())
+        print("{0} [\n\tshape = square;\n\tcolor = {1};".format(self._uniq_name(), color))
         print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(label))
         print("]")
 
@@ -685,7 +687,7 @@ class Process(Element):
         self._is_drawn = True
         color = _setColor(self)
         label = _setLabel(self)
-        print("{0} [\n\tshape = circle;\n\tcolor = {1};\n".format(self._uniq_name(), color))
+        print("{0} [\n\tshape = circle;\n\tcolor = {1};".format(self._uniq_name(), color))
         print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
         print("]")
 
@@ -698,7 +700,7 @@ class SetOfProcesses(Process):
         self._is_drawn = True
         color = _setColor(self)
         label = _setLabel(self)
-        print("{0} [\n\tshape = doublecircle;\n\tcolor = {1};\n".format(self._uniq_name(), color))
+        print("{0} [\n\tshape = doublecircle;\n\tcolor = {1};".format(self._uniq_name(), color))
         print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
         print("]")
 

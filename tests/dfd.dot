@@ -28,6 +28,7 @@ subgraph cluster_boundary_Internet_acf3059e70 {
 
 actor_User_579e9aae81 [
 	shape = square;
+	color = black;
 	label = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>User</b></td></tr></table>>;
 ]
 
@@ -52,7 +53,7 @@ datastore_SQLDatabase_d2006ce1bb [
 
 server_WebServer_f2eb7a3ff7 [
 	shape = circle
-	color = black
+	color = black;
 	label = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>Web Server</b></td></tr></table>>;
 ]
 	actor_User_579e9aae81 -> server_WebServer_f2eb7a3ff7 [
