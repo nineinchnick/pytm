@@ -137,17 +137,6 @@ class varElements(var):
         super().__set__(instance, list(value))
 
 
-def _setColor(element):
-    if element.inScope is True:
-        return "black"
-    else:
-        return "grey69"
-
-
-def _setLabel(element):
-    return "<br/>".join(wrap(element.name, 14))
-
-
 def _sort(flows, addOrder=False):
     ordered = sorted(flows, key=lambda flow: flow.order)
     if not addOrder:
@@ -479,14 +468,14 @@ class TM():
         print("@startuml")
         for e in TM._BagOfElements:
             if isinstance(e, Actor):
-                print("actor {0} as \"{1}\"".format(e._uniq_name(), e.name))
+                print("actor {0} as \"{1}\"".format(e._uniq_name(), e.display_name()))
             elif isinstance(e, Datastore):
-                print("database {0} as \"{1}\"".format(e._uniq_name(), e.name))
+                print("database {0} as \"{1}\"".format(e._uniq_name(), e.display_name()))
             elif not isinstance(e, Dataflow) and not isinstance(e, Boundary):
-                print("entity {0} as \"{1}\"".format(e._uniq_name(), e.name))
+                print("entity {0} as \"{1}\"".format(e._uniq_name(), e.display_name()))
 
         for e in TM._BagOfFlows:
-            print("{0} -> {1}: {2}".format(e.source._uniq_name(), e.sink._uniq_name(), e.name))
+            print("{0} -> {1}: {2}".format(e.source._uniq_name(), e.sink._uniq_name(), e.display_name()))
             if e.note != "":
                 print("note left\n{}\nend note".format(e.note))
         print("@enduml")
@@ -566,11 +555,24 @@ class Element():
 
     def dfd(self, **kwargs):
         self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = square;\n\tcolor = {1};".format(self._uniq_name(), color))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(label))
+        print("{0} [\n\tshape = {2};\n\tcolor = {1};".format(self._uniq_name(), self._color(), self._shape()))
+        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(self._label()))
         print("]")
+
+    def _color(self):
+        if self.inScope is True:
+            return "black"
+        else:
+            return "grey69"
+
+    def display_name(self):
+        return self.name
+
+    def _label(self):
+        return "<br/>".join(wrap(self.display_name(), 18))
+
+    def _shape(self):
+        return "square"
 
     def _safeset(self, attr, value):
         try:
@@ -653,12 +655,13 @@ class Lambda(Element):
 
     def dfd(self, **kwargs):
         self._is_drawn = True
-        color = _setColor(self)
         pngpath = dirname(__file__) + "/images/lambda.png"
-        label = _setLabel(self)
-        print('{0} [\n\tshape = none\n\tfixedsize=shape\n\timage="{2}"\n\timagescale=true\n\tcolor = {1}'.format(self._uniq_name(), color, pngpath))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{}</b></td></tr></table>>;'.format(label))
+        print('{0} [\n\tshape = {2}\n\tfixedsize=shape\n\timage="{3}"\n\timagescale=true\n\tcolor = {1}'.format(self._uniq_name(), self._color(), self._shape(), pngpath))
+        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{}</b></td></tr></table>>;'.format(self._label()))
         print("]")
+
+    def _shape(self):
+        return "none"
 
 
 class Server(Element):
@@ -702,13 +705,8 @@ class Server(Element):
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
-    def dfd(self, **kwargs):
-        self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = circle\n\tcolor = {1};".format(self._uniq_name(), color))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{}</b></td></tr></table>>;'.format(label))
-        print("]")
+    def _shape(self):
+        return "circle"
 
 
 class ExternalEntity(Element):
@@ -752,11 +750,12 @@ class Datastore(Element):
 
     def dfd(self, **kwargs):
         self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = none;\n\tcolor = {1};".format(self._uniq_name(), color))
-        print('\tlabel = <<table sides="TB" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
+        print("{0} [\n\tshape = {2};\n\tcolor = {1};".format(self._uniq_name(), self._color(), self._shape()))
+        print('\tlabel = <<table sides="TB" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(self._label(), self._color()))
         print("]")
+
+    def _shape(self):
+        return "none"
 
 
 class Actor(Element):
@@ -770,14 +769,6 @@ class Actor(Element):
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
-
-    def dfd(self, **kwargs):
-        self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = square;\n\tcolor = {1};".format(self._uniq_name(), color))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(label))
-        print("]")
 
 
 class Process(Element):
@@ -824,26 +815,16 @@ class Process(Element):
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
-    def dfd(self, **kwargs):
-        self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = circle;\n\tcolor = {1};".format(self._uniq_name(), color))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
-        print("]")
+    def _shape(self):
+        return "circle"
 
 
 class SetOfProcesses(Process):
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
-    def dfd(self, **kwargs):
-        self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        print("{0} [\n\tshape = doublecircle;\n\tcolor = {1};".format(self._uniq_name(), color))
-        print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
-        print("]")
+    def _shape(self):
+        return "doublecircle"
 
 
 class Dataflow(Element):
@@ -874,29 +855,25 @@ class Dataflow(Element):
         super().__init__(name, **kwargs)
         TM._BagOfFlows.append(self)
 
-    def __set__(self, instance, value):
-        print("Should not have gotten here.")
+    def display_name(self):
+        if self.order == -1:
+            return self.name
+        return '({}) {}'.format(self.order, self.name)
 
     def dfd(self, mergeResponses=False, **kwargs):
         self._is_drawn = True
-        color = _setColor(self)
-        label = _setLabel(self)
-        if self.order >= 0:
-            label = '({0}) {1}'.format(self.order, label)
         direction = "forward"
+        label = self._label()
         if mergeResponses and self.response is not None:
             direction = "both"
-            resp_label = _setLabel(self.response)
-            if self.response.order >= 0:
-                resp_label = "({0}) {1}".format(self.response.order, resp_label)
-            label += "<br/>" + resp_label
+            label += "<br/>" + self.response._label()
         print("\t{0} -> {1} [\n\t\tcolor = {2};\n\t\tdir = {3};\n".format(
             self.source._uniq_name(),
             self.sink._uniq_name(),
-            color,
+            self._color(),
             direction,
         ))
-        print('\t\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, color))
+        print('\t\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, self._color()))
         print("\t]")
 
 
@@ -914,14 +891,16 @@ class Boundary(Element):
 
         self._is_drawn = True
         logger.debug("Now drawing boundary " + self.name)
-        label = self.name
-        print("subgraph cluster_{0} {{\n\tgraph [\n\t\tfontsize = 10;\n\t\tfontcolor = firebrick2;\n\t\tstyle = dashed;\n\t\tcolor = firebrick2;\n\t\tlabel = <<i>{1}</i>>;\n\t]\n".format(self._uniq_name(), label))
+        print("subgraph cluster_{0} {{\n\tgraph [\n\t\tfontsize = 10;\n\t\tfontcolor = {2};\n\t\tstyle = dashed;\n\t\tcolor = {2};\n\t\tlabel = <<i>{1}</i>>;\n\t]\n".format(self._uniq_name(), self._label(), self._color()))
         for e in TM._BagOfElements:
             if e.inBoundary == self and not e._is_drawn:
                 # The content to draw can include Boundary objects
                 logger.debug("Now drawing content {}".format(e.name))
                 e.dfd()
         print("\n}\n")
+
+    def _color(self):
+        return "firebrick2"
 
 
 def get_args():
