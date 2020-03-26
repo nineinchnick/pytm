@@ -555,7 +555,7 @@ class Element():
 
     def dfd(self, **kwargs):
         self._is_drawn = True
-        print("{0} [\n\tshape = {2};\n\tcolor = {1};".format(self._uniq_name(), self._color(), self._shape()))
+        print("{0} [\n\tshape = {2};\n\tcolor = {1};\n\tfontcolor = {1};".format(self._uniq_name(), self._color(), self._shape()))
         print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(self._label()))
         print("]")
 
@@ -656,7 +656,7 @@ class Lambda(Element):
     def dfd(self, **kwargs):
         self._is_drawn = True
         pngpath = dirname(__file__) + "/images/lambda.png"
-        print('{0} [\n\tshape = {2}\n\tfixedsize=shape\n\timage="{3}"\n\timagescale=true\n\tcolor = {1}'.format(self._uniq_name(), self._color(), self._shape(), pngpath))
+        print('{0} [\n\tshape = {2}\n\tfixedsize=shape\n\timage="{3}"\n\timagescale=true\n\tcolor = {1};\n\tfontcolor = {1};'.format(self._uniq_name(), self._color(), self._shape(), pngpath))
         print('\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{}</b></td></tr></table>>;'.format(self._label()))
         print("]")
 
@@ -750,8 +750,8 @@ class Datastore(Element):
 
     def dfd(self, **kwargs):
         self._is_drawn = True
-        print("{0} [\n\tshape = {2};\n\tcolor = {1};".format(self._uniq_name(), self._color(), self._shape()))
-        print('\tlabel = <<table sides="TB" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(self._label(), self._color()))
+        print("{0} [\n\tshape = {2};\n\tcolor = {1};\n\tfontcolor = {1};".format(self._uniq_name(), self._color(), self._shape()))
+        print('\tlabel = <<table sides="TB" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(self._label()))
         print("]")
 
     def _shape(self):
@@ -867,13 +867,13 @@ class Dataflow(Element):
         if mergeResponses and self.response is not None:
             direction = "both"
             label += "<br/>" + self.response._label()
-        print("\t{0} -> {1} [\n\t\tcolor = {2};\n\t\tdir = {3};\n".format(
+        print("\t{0} -> {1} [\n\t\tcolor = {2};\n\t\tfontcolor = {2};\n\t\tdir = {3};\n".format(
             self.source._uniq_name(),
             self.sink._uniq_name(),
             self._color(),
             direction,
         ))
-        print('\t\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><font color="{1}"><b>{0}</b></font></td></tr></table>>;'.format(label, self._color()))
+        print('\t\tlabel = <<table border="0" cellborder="0" cellpadding="2"><tr><td><b>{0}</b></td></tr></table>>;'.format(label))
         print("\t]")
 
 
