@@ -38,6 +38,7 @@ class TestTM(unittest.TestCase):
 
         TM.reset()
         tm = TM("my test tm", description="aaa")
+        tm.isOrdered = True
         internet = Boundary("Internet")
         server_db = Boundary("Server/DB")
         user = Actor("User", inBoundary=internet)
@@ -48,6 +49,8 @@ class TestTM(unittest.TestCase):
         Dataflow(web, db, "Insert query with comments", note="ccc")
         Dataflow(db, web, "Retrieve comments")
         Dataflow(web, user, "Show comments (*)")
+
+        self.assertTrue(tm.check())
 
         with captured_output() as (out, err):
             tm.seq()
@@ -75,6 +78,8 @@ class TestTM(unittest.TestCase):
         Dataflow(web, db, "Insert query with comments")
         Dataflow(db, web, "Retrieve comments")
         Dataflow(web, user, "Show comments (*)")
+
+        self.assertTrue(tm.check())
 
         with captured_output() as (out, err):
             tm.dfd()
