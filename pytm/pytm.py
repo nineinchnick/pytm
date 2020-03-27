@@ -363,6 +363,14 @@ class Finding():
             getattr(kwargs, "categories", getattr(threat, "categories")),
         )
 
+    def __repr__(self):
+        return "<{0}.{1}({2}) at {3}>".format(
+            self.__module__, type(self).__name__, self.id, hex(id(self))
+        )
+
+    def __str__(self):
+        return "{0}({1})".format(type(self).__name__, self.id)
+
     @property
     def categories(self):
         return ', '.join(self._categories)
