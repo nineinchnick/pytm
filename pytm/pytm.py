@@ -345,7 +345,6 @@ class Finding():
     ):
         self.target = element.name
         self.element = element
-        threat = kwargs.get("threat", Threat(SID=""))
         attrs = [
             "description",
             "details",
@@ -355,13 +354,22 @@ class Finding():
             "id",
             "references",
         ]
+        threat = kwargs.get("threat", None)
+        if threat:
+            for a in attrs:
+                setattr(self, a, getattr(threat, a))
+            setattr(self, "_categories", threat.categories)
+            return
+
         for a in attrs:
-            setattr(self, a, getattr(kwargs, a, getattr(threat, a)))
-        setattr(
-            self,
-            "_categories",
-            getattr(kwargs, "categories", getattr(threat, "categories")),
-        )
+            if a in kwargs:
+                setattr(self, a, kwargs.get(a))
+            if "categories" in kwargs:
+                setattr(
+                    self,
+                    "_categories",
+                    kwargs.get("categories"),
+                )
 
     def __repr__(self):
         return "<{0}.{1}({2}) at {3}>".format(
