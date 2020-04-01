@@ -112,6 +112,18 @@ class varElement(var):
         super().__set__(instance, value)
 
 
+class varElements(var):
+    def __set__(self, instance, value):
+        for i, e in enumerate(value):
+            if not isinstance(e, Element):
+                raise ValueError(
+                    "expecting a list of Elements, item number {} is a {}".format(
+                        type(value)
+                    )
+                )
+        super().__set__(instance, list(value))
+
+
 class varFindings(var):
 
     def __set__(self, instance, value):
@@ -120,18 +132,6 @@ class varFindings(var):
                 raise ValueError(
                     "expecting a list of Findings, item number {} is a {}".format(
                         i, type(value)
-                    )
-                )
-        super().__set__(instance, list(value))
-
-
-class varElements(var):
-    def __set__(self, instance, value):
-        for i, e in enumerate(value):
-            if not isinstance(e, Element):
-                raise ValueError(
-                    "expecting a list of Elements, item number {} is a {}".format(
-                        type(value)
                     )
                 )
         super().__set__(instance, list(value))
@@ -273,6 +273,21 @@ def _describe_classes(classes):
         print()
 
 
+def _get_elements_and_boundaries(flows):
+    """filter out elements and boundaries not used in this TM"""
+    elements = {}
+    boundaries = {}
+    for e in flows:
+        elements[e] = True
+        elements[e.source] = True
+        elements[e.sink] = True
+        if e.source.inBoundary is not None:
+            boundaries[e.source.inBoundary] = True
+        if e.sink.inBoundary is not None:
+            boundaries[e.sink.inBoundary] = True
+    return (elements.keys(), boundaries.keys())
+
+
 ''' End of help functions '''
 
 
@@ -400,8 +415,8 @@ class TM():
                             doc="JSON file with custom threats")
     isOrdered = varBool(False, doc="Automatically order all Dataflows")
     mergeResponses = varBool(False, doc="Merge response edges in DFDs")
-    ignoreUnused = varBool(False)
-    findings = varFindings([])
+    ignoreUnused = varBool(False, doc="Ignore elements not used in any Dataflow")
+    findings = varFindings([], doc="threats found for elements of this model")
 
     def __init__(self, name, **kwargs):
         for key, value in kwargs.items():
@@ -465,7 +480,7 @@ class TM():
     def dfd(self):
         print("digraph tm {\n\tgraph [\n\tfontname = Arial;\n\tfontsize = 14;\n\t]")
         print("\tnode [\n\tfontname = Arial;\n\tfontsize = 14;\n\trankdir = lr;\n\t]")
-        print("\tedge [\n\tshape = none;\n\tfontname = Arial;\n\tfontsize = 12;\n\t]")
+        print("\tedge [\n\tshape = none;\n\tarrowtail = onormal;\n\tfontname = Arial;\n\tfontsize = 12;\n\t]")
         print('\tlabelloc = "t";\n\tfontsize = 20;\n\tnodesep = 1;\n')
         for b in TM._BagOfBoundaries:
             b.dfd()
@@ -836,6 +851,7 @@ class Process(Element):
 
 
 class SetOfProcesses(Process):
+
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
