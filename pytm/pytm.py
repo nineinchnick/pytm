@@ -423,7 +423,7 @@ class TM():
     _BagOfBoundaries = []
     _threatsExcluded = []
     _sf = None
-    _duplicate_ignored_attrs = "name", "note"
+    _duplicate_ignored_attrs = "name", "note", "order", "response", "responseTo"
     name = varString("", required=True, doc="Model name")
     description = varString("", required=True, doc="Model description")
     threatsFile = varString(dirname(__file__) + "/threatlib/threats.json",
