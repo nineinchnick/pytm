@@ -8,6 +8,7 @@ import sys
 import uuid
 from collections import defaultdict
 from collections.abc import Iterable
+from contextlib import contextmanager
 from enum import Enum
 from hashlib import sha224
 from itertools import combinations
@@ -373,6 +374,7 @@ class Finding():
 class TM():
     """Describes the threat model administratively, and holds all details during a run"""
 
+    _contexts = []
     _sf = None
     _duplicate_ignored_attrs = "name", "note", "order", "response", "responseTo"
     name = varString("", required=True, doc="Model name")
@@ -513,7 +515,7 @@ class TM():
 
                 raise ValueError(
                     "Duplicate Dataflow found between {} and {}: "
-                    "{} is same as {}".format(left.source, left.sink, left, right,)
+                    "{} is same as {}".format(left.source, left.sink, left, right)
                 )
 
     def dfd(self):
@@ -585,6 +587,15 @@ class TM():
         if result.list is True:
             [print("{} - {}".format(t.id, t.description)) for t in self._threats]
             sys.exit(0)
+
+    @contextmanager
+    def build(self):
+        c = []
+        TM._contexts.append(c)
+        try:
+            yield c
+        finally:
+            self.elements = TM._contexts.pop()
 
 
 class Element():
@@ -979,6 +990,8 @@ class Dataflow(Element):
         self.source = source
         self.sink = sink
         super().__init__(name, **kwargs)
+        for c in TM._contexts:
+            c.append(self)
 
     def __set__(self, instance, value):
         print("Should not have gotten here.")
@@ -1009,10 +1022,15 @@ class Dataflow(Element):
 class Boundary(Element):
     """Trust boundary"""
 
-    elements = varElements([])
+    elements = varElements([], onSet=lambda i, v: i._init_elements())
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
+
+    def _init_elements(self):
+        for e in self.elements:
+            if e.inBoundary != self:
+                e.inBoundary = self
 
     def dfd(self):
         if self._is_drawn:
