@@ -67,6 +67,14 @@ class varString(var):
         super().__set__(instance, value)
 
 
+class varEnum(var):
+
+    def __set__(self, instance, value):
+        if not isinstance(value, Enum):
+            raise ValueError("expecting an Enum, got a {}".format(type(value)))
+        super().__set__(instance, value)
+
+
 class varBoundary(var):
 
     def __set__(self, instance, value):
@@ -289,6 +297,34 @@ def _get_elements_and_boundaries(flows):
 
 ''' End of help functions '''
 
+class Classification(Enum):
+    PUBLIC = 1
+    RESTRICTED = 2
+    SENSITIVE = 3
+    SECRET = 4
+    TOP_SECRET = 5
+
+    def __gt__(self, other):
+        if self.value > other.value:
+            return True
+        return False
+
+    def __ge__(self, other):
+        if self.value >= other.value:
+            return True
+        return False
+
+
+    def __lt__(self, other):
+        if self.value < other.value:
+            return True
+        return False
+
+
+    def __le__(self, other):
+        if self.value <= other.value:
+            return True
+        return False
 
 class Threat():
     """Represents a possible threat"""
@@ -365,6 +401,7 @@ class TM():
     _BagOfElements = []
     _BagOfThreats = []
     _BagOfBoundaries = []
+    _BagOfData = []
     _threatsExcluded = []
     _sf = None
     _duplicate_ignored_attrs = "name", "note", "order", "response", "responseTo"
@@ -394,6 +431,7 @@ class TM():
         cls._BagOfElements = []
         cls._BagOfThreats = []
         cls._BagOfBoundaries = []
+        cls._BagOfData = []
 
     def _init_threats(self):
         TM._BagOfThreats = []
@@ -505,7 +543,7 @@ class TM():
         with open(self._template) as file:
             template = file.read()
 
-        print(self._sf.format(template, tm=self, dataflows=self._BagOfFlows, threats=self._BagOfThreats, findings=self.findings, elements=self._BagOfElements, boundaries=self._BagOfBoundaries))
+        print(self._sf.format(template, tm=self, dataflows=self._BagOfFlows, threats=self._BagOfThreats, findings=self.findings, elements=self._BagOfElements, boundaries=self._BagOfBoundaries, data=self._BagOfData))
 
     def process(self):
         self.check()
@@ -538,6 +576,7 @@ class Element():
     inScope = varBool(True, doc="Is the element in scope of the threat model")
     onAWS = varBool(False)
     isHardened = varBool(False)
+    maxClassification = varEnum(Classification.PUBLIC, required=False, doc="Maximum data classification this element can handle.")
     implementsAuthenticationScheme = varBool(False)
     implementsNonce = varBool(False, doc="""Nonce is an arbitrary number
 that can be used just once in a cryptographic communication.
@@ -643,7 +682,6 @@ hash functions.""")
                 return True
         return False
 
-
     def _attr_values(self):
         klass = self.__class__
         result = {}
@@ -657,6 +695,29 @@ hash functions.""")
                 value = getattr(self, i)
             result[i] = value
         return result
+
+
+class Data():
+    """Represents a single piece of data that traverses the system"""
+    name = varString("", required=True)
+    description = varString("", required=True)
+    classification = varEnum(Classification.PUBLIC, required=True, doc="""Level of classification for this piece of data""")
+    traverses = varElements([], required=True, doc="Dataflows this data traverses")
+    processedBy = varElements([], required=True, doc="Elements that store/process this piece of data")
+    inScope = varBool(True)
+
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        TM._BagOfData.append(self)
+
+    def dfd(self):
+        ''' Data is not represented in the DFD '''
+        self._is_drawn = False
+
+    def seq(self):
+        ''' Data is not represented in sequence diagrams '''
+        pass
 
 
 class Lambda(Element):
