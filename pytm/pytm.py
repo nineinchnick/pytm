@@ -402,6 +402,7 @@ class TM():
     _BagOfThreats = []
     _BagOfBoundaries = []
     _BagOfData = []
+    _BagOfDataLeaks = []
     _threatsExcluded = []
     _sf = None
     _duplicate_ignored_attrs = "name", "note", "order", "response", "responseTo"
@@ -457,6 +458,12 @@ class TM():
                 findings.append(f)
                 elements[e].append(f)
         self.findings = findings
+        for d in TM._BagOfData:
+            if not d.inScope:
+                continue
+            if d.checkClassification():
+                print("Oooops, data leak")
+
         for e, findings in elements.items():
             e.findings = findings
 
@@ -543,7 +550,7 @@ class TM():
         with open(self._template) as file:
             template = file.read()
 
-        print(self._sf.format(template, tm=self, dataflows=self._BagOfFlows, threats=self._BagOfThreats, findings=self.findings, elements=self._BagOfElements, boundaries=self._BagOfBoundaries, data=self._BagOfData))
+        print(self._sf.format(template, tm=self, dataflows=self._BagOfFlows, threats=self._BagOfThreats, findings=self.findings, elements=self._BagOfElements, boundaries=self._BagOfBoundaries, data=self._BagOfData, dataleaks=self._BagOfDataLeaks))
 
     def process(self):
         self.check()
@@ -697,6 +704,20 @@ hash functions.""")
         return result
 
 
+class DataLeak():
+    """ These are unique enough to warrant separate representation """
+    src = varString("")
+    dst = varString("")
+    data = varString("")
+    classification = varEnum(Classification.PUBLIC)
+    processedBy = varString("")
+
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        TM._BagOfDataLeaks.append(self)
+
+
 class Data():
     """Represents a single piece of data that traverses the system"""
     name = varString("", required=True)
@@ -710,6 +731,32 @@ class Data():
         for key, value in kwargs.items():
             setattr(self, key, value)
         TM._BagOfData.append(self)
+
+    def checkClassification(self):
+        """ given a piece of data, verify it doesn't traverse over or 
+        is processed by any Element that has a lower classification """
+        for df in self.traverses:
+            if self.classification > df.maxClassification:
+                TM._BagOfDataLeaks.append(
+                    DataLeak(
+                        src=df.source.name,
+                        dst=df.sink.name,
+                        data=self.name,
+                        classification=self.classification,
+                        processedBy="",
+                    )
+                )
+        for df in self.processedBy:
+            if self.classification > df.maxClassification:
+                TM._BagOfDataLeaks.append(
+                    DataLeak(
+                        src="",
+                        dst="",
+                        data=self.name,
+                        classification=self.classification,
+                        processedBy=df.name,
+                    )
+                )
 
     def dfd(self):
         ''' Data is not represented in the DFD '''

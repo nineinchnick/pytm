@@ -31,6 +31,16 @@ Name|Description|Classification
 
 &nbsp;
 
+## Data Leaks
+&nbsp;
+
+Name|Source|Destination|Processed By|Classification
+|:----:|:----:|:---:|:----:|:----:|
+{dataleaks:repeat:|{{item.data}}|{{item.src}}|{{item.dst}}|{{item.processedBy}}|{{item.classification.name}}|
+}
+
+&nbsp;
+
 ## Potential Threats
 
 &nbsp;
