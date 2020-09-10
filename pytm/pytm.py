@@ -9,6 +9,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Iterable
 from enum import Enum
+from functools import singledispatch
 from hashlib import sha224
 from itertools import combinations
 from textwrap import indent, wrap
@@ -366,10 +367,10 @@ class TM():
     """Describes the threat model administratively,
 and holds all details during a run"""
 
-    _BagOfFlows = []
-    _BagOfElements = []
-    _BagOfThreats = []
-    _BagOfBoundaries = []
+    _flows = []
+    _elements = []
+    _threats = []
+    _boundaries = []
     _threatsExcluded = []
     _sf = None
     _duplicate_ignored_attrs = "name", "note", "order", "response", "responseTo"
@@ -396,13 +397,13 @@ with same properties, except name and notes""")
 
     @classmethod
     def reset(cls):
-        cls._BagOfFlows = []
-        cls._BagOfElements = []
-        cls._BagOfThreats = []
-        cls._BagOfBoundaries = []
+        cls._flows = []
+        cls._elements = []
+        cls._threats = []
+        cls._boundaries = []
 
     def _init_threats(self):
-        TM._BagOfThreats = []
+        TM._threats = []
         self._add_threats()
 
     def _add_threats(self):
@@ -410,15 +411,15 @@ with same properties, except name and notes""")
             threats_json = json.load(threat_file)
 
         for i in threats_json:
-            TM._BagOfThreats.append(Threat(**i))
+            TM._threats.append(Threat(**i))
 
     def resolve(self):
         findings = []
         elements = defaultdict(list)
-        for e in TM._BagOfElements:
+        for e in TM._elements:
             if not e.inScope:
                 continue
-            for t in TM._BagOfThreats:
+            for t in TM._threats:
                 if not t.apply(e):
                     continue
                 f = Finding(
@@ -441,20 +442,20 @@ with same properties, except name and notes""")
         if self.description is None:
             raise ValueError("""Every threat model should have at least
 a brief description of the system being modeled.""")
-        TM._BagOfFlows = _match_responses(_sort(TM._BagOfFlows, self.isOrdered))
-        self._check_duplicates(TM._BagOfFlows)
-        _apply_defaults(TM._BagOfFlows)
+        TM._flows = _match_responses(_sort(TM._flows, self.isOrdered))
+        self._check_duplicates(TM._flows)
+        _apply_defaults(TM._flows)
         if self.ignoreUnused:
-            TM._BagOfElements, TM._BagOfBoundaries = _get_elements_and_boundaries(
-                TM._BagOfFlows
+            TM._elements, TM._boundaries = _get_elements_and_boundaries(
+                TM._flows
             )
         result = True
-        for e in (TM._BagOfElements):
+        for e in (TM._elements):
             if not e.check():
                 result = False
         if self.ignoreUnused:
             # cannot rely on user defined order if assets are re-used in multiple models
-            TM._BagOfElements = _sort_elem(TM._BagOfElements)
+            TM._elements = _sort_elem(TM._elements)
         return result
 
     def _check_duplicates(self, flows):
@@ -509,13 +510,13 @@ a brief description of the system being modeled.""")
 
     def dfd(self):
         edges = []
-        for b in TM._BagOfBoundaries:
+        for b in TM._boundaries:
             edges.append(b.dfd())
         if self.mergeResponses:
-            for e in TM._BagOfFlows:
+            for e in TM._flows:
                 if e.response is not None:
                     e.response._is_drawn = True
-        for e in TM._BagOfElements:
+        for e in TM._elements:
             if not e._is_drawn and not isinstance(e, Boundary) and e.inBoundary is None:
                 edges.append(e.dfd(mergeResponses=self.mergeResponses))
 
@@ -530,7 +531,7 @@ a brief description of the system being modeled.""")
 
     def seq(self):
         participants = []
-        for e in TM._BagOfElements:
+        for e in TM._elements:
             if isinstance(e, Actor):
                 participants.append(
                     'actor {0} as "{1}"'.format(e._uniq_name(), e.display_name())
@@ -545,7 +546,7 @@ a brief description of the system being modeled.""")
                 )
 
         messages = []
-        for e in TM._BagOfFlows:
+        for e in TM._flows:
             message = "{0} -> {1}: {2}".format(
                 e.source._uniq_name(), e.sink._uniq_name(), e.display_name()
             )
@@ -566,11 +567,11 @@ a brief description of the system being modeled.""")
 
         data = {
             "tm": self,
-            "dataflows": TM._BagOfFlows,
-            "threats": TM._BagOfThreats,
+            "dataflows": TM._flows,
+            "threats": TM._threats,
             "findings": self.findings,
-            "elements": TM._BagOfElements,
-            "boundaries": TM._BagOfBoundaries,
+            "elements": TM._elements,
+            "boundaries": TM._boundaries,
         }
         return self._sf.format(template, **data)
 
@@ -580,19 +581,31 @@ a brief description of the system being modeled.""")
         logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
         if result.debug:
             logger.setLevel(logging.DEBUG)
+
         if result.seq is True:
             print(self.seq())
+
         if result.dfd is True:
             print(self.dfd())
-        if result.report is not None:
+
+        if result.report is not None or result.json is not None:
             self.resolve()
+
+        if result.json:
+            with open(result.json, "w", encoding="utf8") as f:
+                json.dump(self, f, default=to_serializable)
+
+        if result.report is not None:
             print(self.report())
+
         if result.exclude is not None:
             TM._threatsExcluded = result.exclude.split(",")
+
         if result.describe is not None:
             _describe_classes(result.describe.split())
+
         if result.list is True:
-            [print("{} - {}".format(t.id, t.description)) for t in TM._BagOfThreats]
+            [print("{} - {}".format(t.id, t.description)) for t in TM._threats]
 
 
 class Element():
@@ -602,20 +615,6 @@ class Element():
     description = varString("")
     inBoundary = varBoundary(None, doc="Trust boundary this element exists in")
     inScope = varBool(True, doc="Is the element in scope of the threat model")
-    onAWS = varBool(False)
-    isHardened = varBool(False)
-    implementsAuthenticationScheme = varBool(False)
-    implementsNonce = varBool(False, doc="""Nonce is an arbitrary number
-that can be used just once in a cryptographic communication.
-It is often a random or pseudo-random number issued in an authentication protocol
-to ensure that old communications cannot be reused in replay attacks.
-They can also be useful as initialization vectors and in cryptographic
-hash functions.""")
-    handlesResources = varBool(False)
-    definesConnectionTimeout = varBool(False)
-    authenticatesDestination = varBool(False)
-    OS = varString("")
-    isAdmin = varBool(False)
     findings = varFindings([])
 
     def __init__(self, name, **kwargs):
@@ -624,7 +623,7 @@ hash functions.""")
         self.name = name
         self.uuid = uuid.UUID(int=random.getrandbits(128))
         self._is_drawn = False
-        TM._BagOfElements.append(self)
+        TM._elements.append(self)
 
     def __repr__(self):
         return "<{0}.{1}({2}) at {3}>".format(
@@ -753,27 +752,45 @@ hash functions.""")
         return result
 
 
-class Lambda(Element):
-    """A lambda function running in a Function-as-a-Service (FaaS) environment"""
-
-    port = varInt(-1, doc="Default TCP port for outgoing data flows")
-    protocol = varString("", doc="Default network protocol for outgoing data flows")
-    data = varString("", doc="Default type of data in outgoing data flows")
-    onAWS = varBool(True)
+class Asset(Element):
+    """An asset with outgoing or incoming dataflows"""
+    port = varInt(-1, doc="Default TCP port for incoming data flows")
+    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
+    protocol = varString("", doc="Default network protocol for incoming data flows")
+    data = varString("", doc="Default type of data in incoming data flows")
+    inputs = varElements([], doc="incoming Dataflows")
+    outputs = varElements([], doc="outgoing Dataflows")
+    onAWS = varBool(False)
+    isHardened = varBool(False)
+    implementsAuthenticationScheme = varBool(False)
+    implementsNonce = varBool(False, doc="""Nonce is an arbitrary number
+that can be used just once in a cryptographic communication.
+It is often a random or pseudo-random number issued in an authentication protocol
+to ensure that old communications cannot be reused in replay attacks.
+They can also be useful as initialization vectors and in cryptographic
+hash functions.""")
+    handlesResources = varBool(False)
+    definesConnectionTimeout = varBool(False)
+    authenticatesDestination = varBool(False)
     authenticatesSource = varBool(False)
+    authorizesSource = varBool(False)
     hasAccessControl = varBool(False)
+    validatesInput = varBool(False)
     sanitizesInput = varBool(False)
+    checksInputBounds = varBool(False)
     encodesOutput = varBool(False)
     handlesResourceConsumption = varBool(False)
     authenticationScheme = varString("")
     usesEnvironmentVariables = varBool(False)
-    validatesInput = varBool(False)
-    checksInputBounds = varBool(False)
+    OS = varString("")
+
+
+class Lambda(Asset):
+    """A lambda function running in a Function-as-a-Service (FaaS) environment"""
+
+    onAWS = varBool(True)
     environment = varString("")
     implementsAPI = varBool(False)
-    authorizesSource = varBool(False)
-    inputs = varElements([], doc="incoming Dataflows")
-    outputs = varElements([], doc="outgoing Dataflows")
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
@@ -808,33 +825,19 @@ class Lambda(Element):
         return "none"
 
 
-class Server(Element):
+class Server(Asset):
     """An entity processing data"""
 
-    port = varInt(-1, doc="Default TCP port for incoming data flows")
-    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
-    protocol = varString("", doc="Default network protocol for incoming data flows")
-    data = varString("", doc="Default type of data in incoming data flows")
-    inputs = varElements([], doc="incoming Dataflows")
-    outputs = varElements([], doc="outgoing Dataflows")
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
-    authenticatesSource = varBool(False)
-    sanitizesInput = varBool(False)
-    encodesOutput = varBool(False)
-    hasAccessControl = varBool(False)
-    implementsCSRFToken = varBool(False)
-    handlesResourceConsumption = varBool(False)
-    isResilient = varBool(False)
-    authenticationScheme = varString("")
-    validatesInput = varBool(False)
     validatesHeaders = varBool(False)
     encodesHeaders = varBool(False)
+    implementsCSRFToken = varBool(False)
+    isResilient = varBool(False)
     usesSessionTokens = varBool(False)
     usesEncryptionAlgorithm = varString("")
     usesCache = varBool(False)
     usesVPN = varBool(False)
-    authorizesSource = varBool(False)
     usesCodeSigning = varBool(False)
     validatesContentType = varBool(False)
     invokesScriptFilters = varBool(False)
@@ -843,7 +846,6 @@ class Server(Element):
     implementsServerSideValidation = varBool(False)
     usesXMLParser = varBool(False)
     disablesDTD = varBool(False)
-    checksInputBounds = varBool(False)
     implementsStrictHTTPValidation = varBool(False)
     implementsPOLP = varBool(False, doc="""The principle of least privilege (PoLP),
 also known as the principle of minimal privilege or the principle of least authority,
@@ -859,22 +861,16 @@ that are necessary for its legitimate purpose.""")
         return "circle"
 
 
-class ExternalEntity(Element):
+class ExternalEntity(Asset):
     hasPhysicalAccess = varBool(False)
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
 
-class Datastore(Element):
+class Datastore(Asset):
     """An entity storing data"""
 
-    port = varInt(-1, doc="Default TCP port for incoming data flows")
-    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
-    protocol = varString("", doc="Default network protocol for incoming data flows")
-    data = varString("", doc="Default type of data in incoming data flows")
-    inputs = varElements([], doc="incoming Dataflows")
-    outputs = varElements([], doc="outgoing Dataflows")
     onRDS = varBool(False)
     storesLogData = varBool(False)
     storesPII = varBool(False, doc="""Personally Identifiable Information
@@ -883,17 +879,12 @@ is any information relating to an identifiable person.""")
     isSQL = varBool(True)
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
-    authenticatesSource = varBool(False)
     isShared = varBool(False)
     hasWriteAccess = varBool(False)
     handlesResourceConsumption = varBool(False)
     isResilient = varBool(False)
     handlesInterruptions = varBool(False)
-    authorizesSource = varBool(False)
-    hasAccessControl = varBool(False)
-    authenticationScheme = varString("")
     usesEncryptionAlgorithm = varString("")
-    validatesInput = varBool(False)
     implementsPOLP = varBool(False, doc="""The principle of least privilege (PoLP),
 also known as the principle of minimal privilege or the principle of least authority,
 requires that in a particular abstraction layer of a computing environment,
@@ -929,41 +920,29 @@ class Actor(Element):
     data = varString("", doc="Default type of data in outgoing data flows")
     inputs = varElements([], doc="incoming Dataflows")
     outputs = varElements([], doc="outgoing Dataflows")
+    authenticatesDestination = varBool(False)
+    isAdmin = varBool(False)
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
 
-class Process(Element):
+class Process(Asset):
     """An entity processing data"""
 
-    port = varInt(-1, doc="Default TCP port for incoming data flows")
-    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
-    protocol = varString("", doc="Default network protocol for incoming data flows")
-    data = varString("", doc="Default type of data in incoming data flows")
-    inputs = varElements([], doc="incoming Dataflows")
-    outputs = varElements([], doc="outgoing Dataflows")
     codeType = varString("Unmanaged")
     implementsCommunicationProtocol = varBool(False)
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
-    authenticatesSource = varBool(False)
     isResilient = varBool(False)
-    hasAccessControl = varBool(False)
     tracksExecutionFlow = varBool(False)
     implementsCSRFToken = varBool(False)
     handlesResourceConsumption = varBool(False)
     handlesCrashes = varBool(False)
     handlesInterruptions = varBool(False)
-    authorizesSource = varBool(False)
-    authenticationScheme = varString("")
-    checksInputBounds = varBool(False)
-    validatesInput = varBool(False)
-    sanitizesInput = varBool(False)
     implementsAPI = varBool(False)
     usesSecureFunctions = varBool(False)
     environment = varString("")
-    usesEnvironmentVariables = varBool(False)
     disablesiFrames = varBool(False)
     implementsPOLP = varBool(False, doc="""The principle of least privilege (PoLP),
 also known as the principle of minimal privilege or the principle of least authority,
@@ -971,7 +950,6 @@ requires that in a particular abstraction layer of a computing environment,
 every module (such as a process, a user, or a program, depending on the subject)
 must be able to access only the information and resources
 that are necessary for its legitimate purpose.""")
-    encodesOutput = varBool(False)
     usesParameterizedInput = varBool(False)
     allowsClientSideScripting = varBool(False)
     usesStrongSessionIdentifiers = varBool(False)
@@ -1013,8 +991,10 @@ class Dataflow(Element):
     isEncrypted = varBool(False, doc="Is the data encrypted")
     protocol = varString("", doc="Protocol used in this data flow")
     data = varString("", "Type of data carried in this data flow")
+    authenticatesDestination = varBool(False)
     authenticatedWith = varBool(False)
     order = varInt(-1, doc="Number of this data flow in the threat model")
+    implementsAuthenticationScheme = varBool(False)
     implementsCommunicationProtocol = varBool(False)
     note = varString("")
     usesVPN = varBool(False)
@@ -1026,7 +1006,7 @@ class Dataflow(Element):
         self.source = source
         self.sink = sink
         super().__init__(name, **kwargs)
-        TM._BagOfFlows.append(self)
+        TM._flows.append(self)
 
     def display_name(self):
         if self.order == -1:
@@ -1068,8 +1048,8 @@ class Boundary(Element):
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
-        if name not in TM._BagOfBoundaries:
-            TM._BagOfBoundaries.append(self)
+        if name not in TM._boundaries:
+            TM._boundaries.append(self)
 
     def _dfd_template(self):
         return """subgraph cluster_{uniq_name} {{
@@ -1092,7 +1072,7 @@ class Boundary(Element):
         self._is_drawn = True
         logger.debug("Now drawing boundary " + self.name)
         edges = []
-        for e in TM._BagOfElements:
+        for e in TM._elements:
             if e.inBoundary != self or e._is_drawn:
                 continue
             # The content to draw can include Boundary objects
@@ -1107,6 +1087,46 @@ class Boundary(Element):
 
     def _color(self):
         return "firebrick2"
+
+
+@singledispatch
+def to_serializable(val):
+    """Used by default."""
+    return str(val)
+
+
+@to_serializable.register(TM)
+@to_serializable.register(Threat)
+@to_serializable.register(Element)
+@to_serializable.register(Finding)
+def ts_tm(obj):
+    """Used if *obj* is an instance of TM, Element, Threat or Finding."""
+    klass = obj.__class__
+    result = {}
+    if isinstance(obj, Asset):
+        result["__class__"] = klass.__name__
+    for i in dir(obj):
+        if (
+            i.startswith("__")
+            or callable(getattr(klass, i, {}))
+            or (
+                isinstance(obj, TM)
+                and i in ("_sf", "_duplicate_ignored_attrs", "_threats")
+            )
+            or (
+                isinstance(obj, Element)
+                and i in ("inputs", "outputs", "findings", "_is_drawn", "uuid")
+            )
+            or (isinstance(obj, Finding) and i == "element")
+        ):
+            continue
+        value = getattr(obj, i)
+        if isinstance(obj, TM) and i == "_elements":
+            value = [e for e in value if isinstance(e, (Asset, Actor))]
+        if value is not None and isinstance(value, Element):
+            value = value.name
+        result[i.lstrip("_")] = value
+    return result
 
 
 def get_args():
@@ -1126,6 +1146,7 @@ def get_args():
     _parser.add_argument(
         "--describe", help="describe the properties available for a given element"
     )
+    _parser.add_argument('--json', help='output a JSON file')
 
     _args = _parser.parse_args()
     return _args
