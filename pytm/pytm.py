@@ -615,6 +615,20 @@ class Element():
     description = varString("")
     inBoundary = varBoundary(None, doc="Trust boundary this element exists in")
     inScope = varBool(True, doc="Is the element in scope of the threat model")
+    onAWS = varBool(False)
+    isHardened = varBool(False)
+    implementsAuthenticationScheme = varBool(False)
+    implementsNonce = varBool(False, doc="""Nonce is an arbitrary number
+that can be used just once in a cryptographic communication.
+It is often a random or pseudo-random number issued in an authentication protocol
+to ensure that old communications cannot be reused in replay attacks.
+They can also be useful as initialization vectors and in cryptographic
+hash functions.""")
+    handlesResources = varBool(False)
+    definesConnectionTimeout = varBool(False)
+    authenticatesDestination = varBool(False)
+    OS = varString("")
+    isAdmin = varBool(False)
     findings = varFindings([])
 
     def __init__(self, name, **kwargs):
@@ -752,45 +766,27 @@ class Element():
         return result
 
 
-class Asset(Element):
-    """An asset with outgoing or incoming dataflows"""
-    port = varInt(-1, doc="Default TCP port for incoming data flows")
-    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
-    protocol = varString("", doc="Default network protocol for incoming data flows")
-    data = varString("", doc="Default type of data in incoming data flows")
-    inputs = varElements([], doc="incoming Dataflows")
-    outputs = varElements([], doc="outgoing Dataflows")
-    onAWS = varBool(False)
-    isHardened = varBool(False)
-    implementsAuthenticationScheme = varBool(False)
-    implementsNonce = varBool(False, doc="""Nonce is an arbitrary number
-that can be used just once in a cryptographic communication.
-It is often a random or pseudo-random number issued in an authentication protocol
-to ensure that old communications cannot be reused in replay attacks.
-They can also be useful as initialization vectors and in cryptographic
-hash functions.""")
-    handlesResources = varBool(False)
-    definesConnectionTimeout = varBool(False)
-    authenticatesDestination = varBool(False)
+class Lambda(Element):
+    """A lambda function running in a Function-as-a-Service (FaaS) environment"""
+
+    port = varInt(-1, doc="Default TCP port for outgoing data flows")
+    protocol = varString("", doc="Default network protocol for outgoing data flows")
+    data = varString("", doc="Default type of data in outgoing data flows")
+    onAWS = varBool(True)
     authenticatesSource = varBool(False)
-    authorizesSource = varBool(False)
     hasAccessControl = varBool(False)
-    validatesInput = varBool(False)
     sanitizesInput = varBool(False)
-    checksInputBounds = varBool(False)
     encodesOutput = varBool(False)
     handlesResourceConsumption = varBool(False)
     authenticationScheme = varString("")
     usesEnvironmentVariables = varBool(False)
-    OS = varString("")
-
-
-class Lambda(Asset):
-    """A lambda function running in a Function-as-a-Service (FaaS) environment"""
-
-    onAWS = varBool(True)
+    validatesInput = varBool(False)
+    checksInputBounds = varBool(False)
     environment = varString("")
     implementsAPI = varBool(False)
+    authorizesSource = varBool(False)
+    inputs = varElements([], doc="incoming Dataflows")
+    outputs = varElements([], doc="outgoing Dataflows")
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
@@ -825,19 +821,33 @@ class Lambda(Asset):
         return "none"
 
 
-class Server(Asset):
+class Server(Element):
     """An entity processing data"""
 
+    port = varInt(-1, doc="Default TCP port for incoming data flows")
+    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
+    protocol = varString("", doc="Default network protocol for incoming data flows")
+    data = varString("", doc="Default type of data in incoming data flows")
+    inputs = varElements([], doc="incoming Dataflows")
+    outputs = varElements([], doc="outgoing Dataflows")
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
+    authenticatesSource = varBool(False)
+    sanitizesInput = varBool(False)
+    encodesOutput = varBool(False)
+    hasAccessControl = varBool(False)
+    implementsCSRFToken = varBool(False)
+    handlesResourceConsumption = varBool(False)
+    isResilient = varBool(False)
+    authenticationScheme = varString("")
+    validatesInput = varBool(False)
     validatesHeaders = varBool(False)
     encodesHeaders = varBool(False)
-    implementsCSRFToken = varBool(False)
-    isResilient = varBool(False)
     usesSessionTokens = varBool(False)
     usesEncryptionAlgorithm = varString("")
     usesCache = varBool(False)
     usesVPN = varBool(False)
+    authorizesSource = varBool(False)
     usesCodeSigning = varBool(False)
     validatesContentType = varBool(False)
     invokesScriptFilters = varBool(False)
@@ -846,6 +856,7 @@ class Server(Asset):
     implementsServerSideValidation = varBool(False)
     usesXMLParser = varBool(False)
     disablesDTD = varBool(False)
+    checksInputBounds = varBool(False)
     implementsStrictHTTPValidation = varBool(False)
     implementsPOLP = varBool(False, doc="""The principle of least privilege (PoLP),
 also known as the principle of minimal privilege or the principle of least authority,
@@ -861,16 +872,22 @@ that are necessary for its legitimate purpose.""")
         return "circle"
 
 
-class ExternalEntity(Asset):
+class ExternalEntity(Element):
     hasPhysicalAccess = varBool(False)
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
 
-class Datastore(Asset):
+class Datastore(Element):
     """An entity storing data"""
 
+    port = varInt(-1, doc="Default TCP port for incoming data flows")
+    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
+    protocol = varString("", doc="Default network protocol for incoming data flows")
+    data = varString("", doc="Default type of data in incoming data flows")
+    inputs = varElements([], doc="incoming Dataflows")
+    outputs = varElements([], doc="outgoing Dataflows")
     onRDS = varBool(False)
     storesLogData = varBool(False)
     storesPII = varBool(False, doc="""Personally Identifiable Information
@@ -879,12 +896,17 @@ is any information relating to an identifiable person.""")
     isSQL = varBool(True)
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
+    authenticatesSource = varBool(False)
     isShared = varBool(False)
     hasWriteAccess = varBool(False)
     handlesResourceConsumption = varBool(False)
     isResilient = varBool(False)
     handlesInterruptions = varBool(False)
+    authorizesSource = varBool(False)
+    hasAccessControl = varBool(False)
+    authenticationScheme = varString("")
     usesEncryptionAlgorithm = varString("")
+    validatesInput = varBool(False)
     implementsPOLP = varBool(False, doc="""The principle of least privilege (PoLP),
 also known as the principle of minimal privilege or the principle of least authority,
 requires that in a particular abstraction layer of a computing environment,
@@ -920,29 +942,41 @@ class Actor(Element):
     data = varString("", doc="Default type of data in outgoing data flows")
     inputs = varElements([], doc="incoming Dataflows")
     outputs = varElements([], doc="outgoing Dataflows")
-    authenticatesDestination = varBool(False)
-    isAdmin = varBool(False)
 
     def __init__(self, name, **kwargs):
         super().__init__(name, **kwargs)
 
 
-class Process(Asset):
+class Process(Element):
     """An entity processing data"""
 
+    port = varInt(-1, doc="Default TCP port for incoming data flows")
+    isEncrypted = varBool(False, doc="Requires incoming data flow to be encrypted")
+    protocol = varString("", doc="Default network protocol for incoming data flows")
+    data = varString("", doc="Default type of data in incoming data flows")
+    inputs = varElements([], doc="incoming Dataflows")
+    outputs = varElements([], doc="outgoing Dataflows")
     codeType = varString("Unmanaged")
     implementsCommunicationProtocol = varBool(False)
     providesConfidentiality = varBool(False)
     providesIntegrity = varBool(False)
+    authenticatesSource = varBool(False)
     isResilient = varBool(False)
+    hasAccessControl = varBool(False)
     tracksExecutionFlow = varBool(False)
     implementsCSRFToken = varBool(False)
     handlesResourceConsumption = varBool(False)
     handlesCrashes = varBool(False)
     handlesInterruptions = varBool(False)
+    authorizesSource = varBool(False)
+    authenticationScheme = varString("")
+    checksInputBounds = varBool(False)
+    validatesInput = varBool(False)
+    sanitizesInput = varBool(False)
     implementsAPI = varBool(False)
     usesSecureFunctions = varBool(False)
     environment = varString("")
+    usesEnvironmentVariables = varBool(False)
     disablesiFrames = varBool(False)
     implementsPOLP = varBool(False, doc="""The principle of least privilege (PoLP),
 also known as the principle of minimal privilege or the principle of least authority,
@@ -950,6 +984,7 @@ requires that in a particular abstraction layer of a computing environment,
 every module (such as a process, a user, or a program, depending on the subject)
 must be able to access only the information and resources
 that are necessary for its legitimate purpose.""")
+    encodesOutput = varBool(False)
     usesParameterizedInput = varBool(False)
     allowsClientSideScripting = varBool(False)
     usesStrongSessionIdentifiers = varBool(False)
@@ -991,10 +1026,8 @@ class Dataflow(Element):
     isEncrypted = varBool(False, doc="Is the data encrypted")
     protocol = varString("", doc="Protocol used in this data flow")
     data = varString("", "Type of data carried in this data flow")
-    authenticatesDestination = varBool(False)
     authenticatedWith = varBool(False)
     order = varInt(-1, doc="Number of this data flow in the threat model")
-    implementsAuthenticationScheme = varBool(False)
     implementsCommunicationProtocol = varBool(False)
     note = varString("")
     usesVPN = varBool(False)
@@ -1103,7 +1136,7 @@ def ts_tm(obj):
     """Used if *obj* is an instance of TM, Element, Threat or Finding."""
     klass = obj.__class__
     result = {}
-    if isinstance(obj, Asset):
+    if isinstance(obj, Element):
         result["__class__"] = klass.__name__
     for i in dir(obj):
         if (
@@ -1122,7 +1155,7 @@ def ts_tm(obj):
             continue
         value = getattr(obj, i)
         if isinstance(obj, TM) and i == "_elements":
-            value = [e for e in value if isinstance(e, (Asset, Actor))]
+            value = [e for e in value if isinstance(e, Element)]
         if value is not None and isinstance(value, Element):
             value = value.name
         result[i.lstrip("_")] = value
